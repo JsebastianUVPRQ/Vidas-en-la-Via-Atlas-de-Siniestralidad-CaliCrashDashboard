@@ -8,6 +8,16 @@ bin-release/
 .settings/
 # virtual environment folder
 venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+.streamlit/secrets.toml
+
+# Data snapshots
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
 
 # Executables
 *.swf
