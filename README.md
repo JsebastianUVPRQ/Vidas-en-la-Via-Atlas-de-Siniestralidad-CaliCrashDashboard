@@ -38,6 +38,7 @@ la interfaz.
 │   ├── config.py        # Rutas, centro del mapa y órdenes de categorías
 │   ├── dashboard.py     # Composición de la interfaz Streamlit
 │   ├── etl.py           # Carga, limpieza y normalización de datos
+│   ├── insights.py      # Narrativa automática sobre patrones filtrados
 │   ├── mapa.py          # Construcción de mapas Folium
 │   ├── modelo.py        # Modelo base de frecuencia esperada
 │   └── metrics.py       # Filtros, KPIs y agregaciones
@@ -54,5 +55,6 @@ la interfaz.
 ## 📌 Estado del proyecto
 En desarrollo activo. La app ya permite cargar CSV desde la barra lateral,
 filtrar por comuna, fecha, franja horaria, tipo y gravedad, visualizar mapa de
-calor/clusters, KPIs, patrones temporales, rankings y una frecuencia diaria
-esperada basada en promedios históricos observados.
+calor/clusters, KPIs compactos, insights automáticos, patrones temporales,
+rankings y una frecuencia diaria esperada basada en promedios históricos
+observados.

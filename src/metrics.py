@@ -16,6 +16,9 @@ class DashboardKpis:
     daily_average: float
     top_comuna: str
     top_intersection: str
+    critical_hour: str
+    weekly_trend: str
+    weekly_trend_delta: float
 
 
 def filter_accidents(
@@ -58,17 +61,25 @@ def build_kpis(accidents: pd.DataFrame) -> DashboardKpis:
             daily_average=0.0,
             top_comuna="Sin datos",
             top_intersection="Sin datos",
+            critical_hour="Sin datos",
+            weekly_trend="Sin tendencia",
+            weekly_trend_delta=0.0,
         )
 
     date_count = accidents["fecha"].dt.date.nunique()
     top_comuna = aggregate_by_comuna(accidents).iloc[0]["comuna"]
     top_intersection = _top_value(accidents, "interseccion")
+    critical_hour = _critical_hour(accidents)
+    weekly_trend, weekly_trend_delta = _weekly_trend(accidents)
 
     return DashboardKpis(
         total_accidents=total,
         daily_average=total / max(date_count, 1),
         top_comuna=str(top_comuna),
         top_intersection=top_intersection,
+        critical_hour=critical_hour,
+        weekly_trend=weekly_trend,
+        weekly_trend_delta=weekly_trend_delta,
     )
 
 
@@ -85,6 +96,24 @@ def aggregate_by_time_band(accidents: pd.DataFrame) -> pd.DataFrame:
 def aggregate_by_weekday(accidents: pd.DataFrame) -> pd.DataFrame:
     """Count accidents by weekday using Monday-first order in Spanish."""
     return _aggregate_sorted(accidents, "dia_semana", WEEKDAY_ORDER)
+
+
+def aggregate_by_hour(accidents: pd.DataFrame) -> pd.DataFrame:
+    """Count accidents by hour of day, including empty hours."""
+    columns = ["hora_dia", "accidentes"]
+    if accidents.empty:
+        return pd.DataFrame({"hora_dia": range(24), "accidentes": [0] * 24})[columns]
+
+    hours = _hour_series(accidents["hora"])
+    counts = (
+        hours.dropna()
+        .astype(int)
+        .value_counts()
+        .reindex(range(24), fill_value=0)
+        .rename_axis("hora_dia")
+        .reset_index(name="accidentes")
+    )
+    return counts[columns]
 
 
 def _aggregate_sorted(
@@ -119,3 +148,50 @@ def _top_value(accidents: pd.DataFrame, column: str) -> str:
     if values.empty:
         return "Sin datos"
     return str(values.value_counts().idxmax())
+
+
+def _critical_hour(accidents: pd.DataFrame) -> str:
+    counts = aggregate_by_hour(accidents)
+    if counts["accidentes"].sum() == 0:
+        return "Sin datos"
+    sorted_counts = counts.sort_values(
+        ["accidentes", "hora_dia"],
+        ascending=[False, True],
+    )
+    hour = int(sorted_counts.iloc[0]["hora_dia"])
+    return f"{hour:02d}:00"
+
+
+def _weekly_trend(accidents: pd.DataFrame) -> tuple[str, float]:
+    daily = (
+        accidents.assign(dia=accidents["fecha"].dt.date)
+        .groupby("dia")
+        .size()
+        .sort_index()
+    )
+    if len(daily) < 2:
+        return "Sin tendencia", 0.0
+
+    split_index = len(daily) // 2
+    first_average = float(daily.iloc[:split_index].mean())
+    second_average = float(daily.iloc[split_index:].mean())
+    if first_average == 0:
+        delta = 100.0 if second_average > 0 else 0.0
+    else:
+        delta = ((second_average - first_average) / first_average) * 100
+
+    if abs(delta) < 5:
+        return "Estable", delta
+    if delta > 0:
+        return "Al alza", delta
+    return "A la baja", delta
+
+
+def _hour_series(hours: pd.Series) -> pd.Series:
+    parsed = pd.to_datetime(hours.astype(str), format="%H:%M", errors="coerce")
+    result = parsed.dt.hour.astype("float")
+    missing = result.isna()
+    if missing.any():
+        numeric = pd.to_numeric(hours[missing].astype(str).str.strip(), errors="coerce")
+        result.loc[missing] = numeric % 24
+    return result

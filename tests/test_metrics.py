@@ -1,6 +1,7 @@
 import pandas as pd
 
 from src.metrics import (
+    aggregate_by_hour,
     aggregate_by_comuna,
     aggregate_by_weekday,
     build_kpis,
@@ -12,6 +13,7 @@ def _sample_accidents() -> pd.DataFrame:
     return pd.DataFrame(
         {
             "fecha": pd.to_datetime(["2025-01-01", "2025-01-01", "2025-01-02"]),
+            "hora": ["08:15", "21:30", "08:45"],
             "comuna": ["2", "2", "17"],
             "franja_horaria": ["mañana", "noche", "mañana"],
             "tipo_accidente": ["Choque", "Atropello", "Choque"],
@@ -54,9 +56,29 @@ def test_build_kpis() -> None:
     assert result.daily_average == 1.5
     assert result.top_comuna == "2"
     assert result.top_intersection == "A"
+    assert result.critical_hour == "08:00"
+    assert result.weekly_trend == "A la baja"
+    assert result.weekly_trend_delta == -50.0
+
+
+def test_build_kpis_handles_empty_data() -> None:
+    result = build_kpis(_sample_accidents().iloc[0:0])
+
+    assert result.total_accidents == 0
+    assert result.critical_hour == "Sin datos"
+    assert result.weekly_trend == "Sin tendencia"
+    assert result.weekly_trend_delta == 0.0
 
 
 def test_aggregate_by_weekday_uses_calendar_order() -> None:
     result = aggregate_by_weekday(_sample_accidents())
 
     assert result["dia_semana"].tolist() == ["miércoles", "jueves"]
+
+
+def test_aggregate_by_hour_returns_full_day() -> None:
+    result = aggregate_by_hour(_sample_accidents())
+
+    assert len(result) == 24
+    assert result.loc[result["hora_dia"] == 8, "accidentes"].iloc[0] == 2
+    assert result.loc[result["hora_dia"] == 21, "accidentes"].iloc[0] == 1

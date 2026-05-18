@@ -32,6 +32,7 @@ graph TD
 - `src/config.py`: configuración compartida de rutas, centro del mapa y orden de categorías.
 - `src/dashboard.py`: composición de la interfaz, carga de CSV desde la barra lateral, filtros, KPIs, visualizaciones y descarga.
 - `src/etl.py`: carga CSV desde `data/processed/accidentes_limpios.csv` o `data/raw/accidentes.csv`, normaliza columnas y deriva `franja_horaria`, `dia_semana` y `mes`.
+- `src/insights.py`: narrativa automática de concentración por comuna, franja horaria y gravedad.
 - `src/metrics.py`: filtros, KPIs y agregaciones por comuna/franja horaria.
 - `src/mapa.py`: mapa Folium centrado en Cali con marcadores agrupados.
 - `src/modelo.py`: modelo base de frecuencia esperada con promedios históricos por comuna y franja horaria.
@@ -48,9 +49,11 @@ Estado implementado:
 - Carga automática desde `data/processed/accidentes_limpios.csv`, `data/raw/accidentes.csv` o CSV subido en la barra lateral.
 - Filtros por comuna, franja horaria, tipo, gravedad y rango de fechas.
 - KPIs de total, promedio diario, comuna crítica e intersección crítica.
-- Mapa Folium con capa de calor opcional y clusters de marcadores.
-- Rankings por comuna, franja horaria, día de semana y serie diaria.
-- Tabla de frecuencia diaria esperada por comuna y franja horaria.
+- KPIs compactos de total, comuna crítica, hora crítica y tendencia semanal.
+- Mapa Folium con capa de calor opcional, clusters de marcadores y popups compactos.
+- Panel lateral derecho con insights automáticos, top comunas y franja horaria.
+- Gráficos narrativos de accidentes por hora del día y tendencia diaria.
+- Tabla técnica colapsada de frecuencia diaria esperada por comuna y franja horaria.
 
 ## 5. Procesamiento de datos
 - Conversión de coordenadas si es necesario (EPSG:4326 → proyección local).

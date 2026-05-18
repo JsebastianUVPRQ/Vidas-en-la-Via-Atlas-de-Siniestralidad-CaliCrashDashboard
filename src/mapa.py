@@ -30,9 +30,15 @@ def build_accident_map(
         HeatMap(
             heat_points,
             name="Densidad",
-            radius=18,
-            blur=14,
-            min_opacity=0.25,
+            radius=20,
+            blur=18,
+            min_opacity=0.18,
+            gradient={
+                0.20: "#38bdf8",
+                0.45: "#22c55e",
+                0.70: "#f59e0b",
+                1.00: "#ef4444",
+            },
         ).add_to(crash_map)
 
     marker_cluster = MarkerCluster(name="Accidentes").add_to(crash_map)
@@ -50,11 +56,12 @@ def build_accident_map(
         )
         folium.CircleMarker(
             location=(float(accident.latitud), float(accident.longitud)),
-            radius=5,
-            color="#b91c1c",
+            radius=4,
+            color="#0f172a",
+            weight=1,
             fill=True,
-            fill_color="#ef4444",
-            fill_opacity=0.72,
+            fill_color="#f59e0b",
+            fill_opacity=0.84,
             popup=popup,
         ).add_to(marker_cluster)
 
@@ -78,9 +85,15 @@ def _popup_html(
     safe_gravedad = escape(gravedad)
 
     return f"""
-    <strong>{safe_tipo}</strong><br>
-    Fecha: {safe_fecha} {safe_hora}<br>
-    Comuna: {safe_comuna}<br>
-    Barrio: {safe_barrio}<br>
-    Gravedad: {safe_gravedad}
+    <div style="font-family: Inter, Segoe UI, sans-serif; min-width: 190px;">
+        <div style="font-weight: 700; font-size: 14px; margin-bottom: 6px;">
+            {safe_tipo}
+        </div>
+        <div style="color: #475569; font-size: 12px; margin-bottom: 6px;">
+            {safe_fecha} · {safe_hora}
+        </div>
+        <div style="font-size: 12px;">Comuna <strong>{safe_comuna}</strong></div>
+        <div style="font-size: 12px;">Barrio: {safe_barrio}</div>
+        <div style="font-size: 12px;">Gravedad: {safe_gravedad}</div>
+    </div>
     """
