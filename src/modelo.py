@@ -1,10 +1,18 @@
 """Frequency model helpers for Cali traffic crash records."""
 
+import numpy as np
 import pandas as pd
+
+from src.config import RISK_THRESHOLDS
+
+_Z_SCORE = 1.96
 
 
 def estimate_frequency(accidents: pd.DataFrame) -> pd.DataFrame:
     """Estimate observed daily accident frequency by commune and time band.
+
+    Computes per-group accident counts, observed days, expected daily
+    frequency, and a 95 % Poisson confidence interval.
 
     This baseline model uses historical averages from the selected period. It
     is intentionally lightweight until a larger validated dataset is connected.
@@ -15,21 +23,27 @@ def estimate_frequency(accidents: pd.DataFrame) -> pd.DataFrame:
         "accidentes_observados",
         "dias_observados",
         "frecuencia_diaria_esperada",
+        "intervalo_inferior",
+        "intervalo_superior",
         "nivel_riesgo",
     ]
     if accidents.empty:
         return pd.DataFrame(columns=columns)
 
-    days = max(accidents["fecha"].dt.date.nunique(), 1)
     grouped = (
         accidents.groupby(["comuna", "franja_horaria"], dropna=False)
-        .size()
-        .reset_index(name="accidentes_observados")
+        .agg(
+            accidentes_observados=("fecha", "count"),
+            dias_observados=("fecha", lambda col: col.dt.date.nunique()),
+        )
+        .reset_index()
     )
-    grouped["dias_observados"] = days
-    grouped["frecuencia_diaria_esperada"] = (
-        grouped["accidentes_observados"] / grouped["dias_observados"]
-    )
+
+    rate = grouped["accidentes_observados"] / grouped["dias_observados"]
+    se = np.sqrt(rate / grouped["dias_observados"])
+    grouped["frecuencia_diaria_esperada"] = rate
+    grouped["intervalo_inferior"] = (rate - _Z_SCORE * se).clip(lower=0)
+    grouped["intervalo_superior"] = rate + _Z_SCORE * se
     grouped["nivel_riesgo"] = _risk_labels(grouped["frecuencia_diaria_esperada"])
 
     return grouped.sort_values(
@@ -42,8 +56,8 @@ def _risk_labels(values: pd.Series) -> pd.Series:
     if values.empty:
         return pd.Series(dtype=str)
 
-    high_threshold = values.quantile(0.75)
-    medium_threshold = values.quantile(0.40)
+    high_threshold = values.quantile(RISK_THRESHOLDS["medio"])
+    medium_threshold = values.quantile(RISK_THRESHOLDS["bajo"])
 
     return values.map(
         lambda value: _risk_label(

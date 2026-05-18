@@ -27,7 +27,7 @@ def filter_accidents(
     date_range: tuple[date, date] | list[date] | None = None,
 ) -> pd.DataFrame:
     """Filter accidents by commune, time band, type, severity, and date."""
-    filtered = accidents.copy()
+    filtered = accidents
 
     if comunas:
         filtered = filtered[filtered["comuna"].astype(str).isin(comunas)]
@@ -79,24 +79,22 @@ def aggregate_by_comuna(accidents: pd.DataFrame) -> pd.DataFrame:
 
 def aggregate_by_time_band(accidents: pd.DataFrame) -> pd.DataFrame:
     """Count accidents by time band using a human-readable order."""
-    counts = _count_by(accidents, "franja_horaria")
-    counts["sort_order"] = counts["franja_horaria"].map(
-        {band: index for index, band in enumerate(TIME_BAND_ORDER)}
-    )
-    return counts.sort_values(["sort_order", "franja_horaria"]).drop(
-        columns="sort_order"
-    )
+    return _aggregate_sorted(accidents, "franja_horaria", TIME_BAND_ORDER)
 
 
 def aggregate_by_weekday(accidents: pd.DataFrame) -> pd.DataFrame:
     """Count accidents by weekday using Monday-first order in Spanish."""
-    counts = _count_by(accidents, "dia_semana")
-    counts["sort_order"] = counts["dia_semana"].map(
-        {day: index for index, day in enumerate(WEEKDAY_ORDER)}
+    return _aggregate_sorted(accidents, "dia_semana", WEEKDAY_ORDER)
+
+
+def _aggregate_sorted(
+    accidents: pd.DataFrame, column: str, order: list[str]
+) -> pd.DataFrame:
+    counts = _count_by(accidents, column)
+    counts["sort_order"] = counts[column].map(
+        {value: index for index, value in enumerate(order)}
     )
-    return counts.sort_values(["sort_order", "dia_semana"]).drop(
-        columns="sort_order"
-    )
+    return counts.sort_values(["sort_order", column]).drop(columns="sort_order")
 
 
 def _count_by(accidents: pd.DataFrame, column: str) -> pd.DataFrame:

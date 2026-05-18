@@ -198,9 +198,17 @@ def _render_frequency_table(accidents: pd.DataFrame) -> None:
         use_container_width=True,
         column_config={
             "frecuencia_diaria_esperada": st.column_config.NumberColumn(
-                "Frecuencia diaria esperada",
+                "Frecuencia diaria",
                 format="%.2f",
-            )
+            ),
+            "intervalo_inferior": st.column_config.NumberColumn(
+                "IC 95 % inf.",
+                format="%.2f",
+            ),
+            "intervalo_superior": st.column_config.NumberColumn(
+                "IC 95 % sup.",
+                format="%.2f",
+            ),
         },
     )
 
