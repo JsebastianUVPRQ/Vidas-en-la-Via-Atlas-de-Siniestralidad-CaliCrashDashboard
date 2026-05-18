@@ -1,0 +1,102 @@
+import pandas as pd
+
+from src.fallecidos import (
+    aggregate_fatalities_by_crash_class,
+    aggregate_fatalities_by_time_range,
+    aggregate_fatalities_by_year,
+    build_fatality_kpis,
+    normalize_fatality_data,
+)
+
+
+def _raw_fatalities() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "Departamento": "VALLE DEL CAUCA",
+                "Municipio": "CALI",
+                "EstadoVictima": "MUERTOS",
+                "AnoHecho": "2024",
+                "MesOCurrencia": "11.NOVIEMBRE",
+                "DiaOcurrencia": "7.DOMINGO",
+                "Rango3horas": "21:00 A 23:59",
+                "Rango6horas": "18:00 A 23:59",
+                "Sexo": "HOMBRE",
+                "RangoEdad": "[20,25)",
+                "ClaseAccidente": "CHOQUE",
+                "Hipotesis": "SIN INFORMACIÓN",
+                "TotalRegistros": "2",
+            },
+            {
+                "Departamento": "VALLE DEL CAUCA",
+                "Municipio": "CALI",
+                "EstadoVictima": "MUERTOS",
+                "AnoHecho": "2025",
+                "MesOCurrencia": "03.MARZO",
+                "DiaOcurrencia": "1.LUNES",
+                "Rango3horas": "00:00 A 02:59",
+                "Rango6horas": "00:00 A 05:59",
+                "Sexo": "MUJER",
+                "RangoEdad": "[30,35)",
+                "ClaseAccidente": "ATROPELLO",
+                "Hipotesis": "CRUZAR EN ESTADO DE EMBRIAGUEZ",
+                "TotalRegistros": "1",
+            },
+            {
+                "Departamento": "ANTIOQUIA",
+                "Municipio": "MEDELLIN",
+                "EstadoVictima": "MUERTOS",
+                "AnoHecho": "2025",
+                "MesOCurrencia": "03.MARZO",
+                "DiaOcurrencia": "1.LUNES",
+                "Rango3horas": "00:00 A 02:59",
+                "Rango6horas": "00:00 A 05:59",
+                "Sexo": "HOMBRE",
+                "RangoEdad": "[30,35)",
+                "ClaseAccidente": "CHOQUE",
+                "Hipotesis": "SIN INFORMACIÓN",
+                "TotalRegistros": "9",
+            },
+        ]
+    )
+
+
+def test_normalize_fatality_data_filters_cali_records() -> None:
+    result = normalize_fatality_data(_raw_fatalities())
+
+    assert len(result) == 2
+    assert result["total_fallecidos"].sum() == 3
+    assert result.loc[0, "mes"] == 11
+    assert result.loc[0, "dia_semana"] == "domingo"
+
+
+def test_build_fatality_kpis() -> None:
+    fatalities = normalize_fatality_data(_raw_fatalities())
+
+    result = build_fatality_kpis(fatalities)
+
+    assert result.total_fatalities == 3
+    assert result.top_year == "2024"
+    assert result.top_time_range == "21:00 A 23:59"
+    assert result.top_crash_class == "CHOQUE"
+
+
+def test_fatality_aggregations() -> None:
+    fatalities = normalize_fatality_data(_raw_fatalities())
+
+    by_year = aggregate_fatalities_by_year(fatalities)
+    by_time = aggregate_fatalities_by_time_range(fatalities)
+    by_class = aggregate_fatalities_by_crash_class(fatalities)
+
+    assert by_year.loc[0, "fallecidos"] == 2
+    assert by_time.loc[0, "rango_3h"] == "21:00 A 23:59"
+    assert by_class.loc[0, "clase_accidente"] == "CHOQUE"
+
+
+def test_normalize_fatality_data_marks_unknown_time_ranges() -> None:
+    raw = _raw_fatalities()
+    raw.loc[0, "Rango3horas"] = "-1"
+
+    result = normalize_fatality_data(raw)
+
+    assert result.loc[0, "rango_3h"] == "Sin información"

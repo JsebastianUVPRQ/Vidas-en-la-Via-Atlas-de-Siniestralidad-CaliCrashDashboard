@@ -16,8 +16,10 @@ __pycache__/
 # Data snapshots
 data/raw/*
 data/processed/*
+data/fallecidos/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+!data/fallecidos/.gitkeep
 
 # Executables
 *.swf

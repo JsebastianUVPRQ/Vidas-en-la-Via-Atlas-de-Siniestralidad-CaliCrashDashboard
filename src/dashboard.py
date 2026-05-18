@@ -9,8 +9,15 @@ import plotly.graph_objects as go
 import streamlit as st
 from streamlit_folium import st_folium
 
-from src.config import DATA_CANDIDATES, TIME_BAND_ORDER
+from src.config import DATA_CANDIDATES, FATALITY_DATA_DIR, TIME_BAND_ORDER
 from src.etl import load_accident_data, normalize_accident_data
+from src.fallecidos import (
+    aggregate_fatalities_by_crash_class,
+    aggregate_fatalities_by_time_range,
+    aggregate_fatalities_by_year,
+    build_fatality_kpis,
+    load_fatality_data,
+)
 from src.insights import build_insights
 from src.mapa import build_accident_map
 from src.metrics import (
@@ -47,6 +54,7 @@ def render_dashboard() -> None:
 
     uploaded_file = st.sidebar.file_uploader("CSV de accidentes", type=["csv"])
     accidents = _load_data(uploaded_file)
+    fatalities = _load_fatalities()
 
     _render_header(accidents)
     if accidents.empty:
@@ -67,6 +75,7 @@ def render_dashboard() -> None:
     _render_kpi_strip(filtered)
     _render_operations_view(filtered, filters.show_heatmap)
     _render_temporal_story(filtered)
+    _render_fatalities_section(fatalities)
     _render_technical_detail(filtered)
 
 
@@ -75,6 +84,11 @@ def _load_data(uploaded_file: object | None) -> pd.DataFrame:
     if uploaded_file is not None:
         return normalize_accident_data(pd.read_csv(uploaded_file))
     return load_accident_data(DATA_CANDIDATES)
+
+
+@st.cache_data(show_spinner=False)
+def _load_fatalities() -> pd.DataFrame:
+    return load_fatality_data(FATALITY_DATA_DIR)
 
 
 def _render_header(accidents: pd.DataFrame) -> None:
@@ -282,6 +296,57 @@ def _render_temporal_story(accidents: pd.DataFrame) -> None:
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 
+def _render_fatalities_section(fatalities: pd.DataFrame) -> None:
+    with st.expander("Mortalidad vial en Cali", expanded=False):
+        if fatalities.empty:
+            st.info("No hay registros de fallecidos para Cali en data/fallecidos.")
+            return
+
+        kpis = build_fatality_kpis(fatalities)
+        cols = st.columns(4)
+        cols[0].metric("Fallecidos", f"{kpis.total_fatalities:,}")
+        cols[1].metric("Año crítico", kpis.top_year)
+        cols[2].metric("Horario crítico", kpis.top_time_range)
+        cols[3].metric("Clase crítica", kpis.top_crash_class)
+
+        year_col, profile_col = st.columns(2, gap="large")
+        with year_col:
+            yearly = aggregate_fatalities_by_year(fatalities).sort_values("Año")
+            fig = px.line(
+                yearly,
+                x="Año",
+                y="fallecidos",
+                markers=True,
+                labels={"fallecidos": "Fallecidos"},
+            )
+            _style_line_figure(fig, height=300)
+            st.plotly_chart(
+                fig,
+                use_container_width=True,
+                config={"displayModeBar": False},
+            )
+
+        with profile_col:
+            by_time = aggregate_fatalities_by_time_range(fatalities).head(8)
+            fig = px.bar(
+                by_time.sort_values("fallecidos"),
+                x="fallecidos",
+                y="rango_3h",
+                orientation="h",
+                text="fallecidos",
+                labels={"fallecidos": "Fallecidos", "rango_3h": ""},
+            )
+            _style_bar_figure(fig, height=300, color="#ef4444")
+            st.plotly_chart(
+                fig,
+                use_container_width=True,
+                config={"displayModeBar": False},
+            )
+
+        crash_class = aggregate_fatalities_by_crash_class(fatalities).head(10)
+        st.dataframe(crash_class, hide_index=True, use_container_width=True)
+
+
 def _render_technical_detail(accidents: pd.DataFrame) -> None:
     with st.expander("Ver detalle técnico", expanded=False):
         frequency = estimate_frequency(accidents)
@@ -321,12 +386,29 @@ def _daily_counts(accidents: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def _style_bar_figure(fig: go.Figure, height: int) -> None:
+def _style_bar_figure(fig: go.Figure, height: int, color: str = "#7dd3fc") -> None:
     fig.update_traces(
-        marker_color="#7dd3fc",
+        marker_color=color,
         marker_line_color="rgba(255,255,255,0)",
         textposition="outside",
         cliponaxis=False,
+    )
+    fig.update_layout(
+        height=height,
+        margin={"l": 8, "r": 8, "t": 12, "b": 8},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": "#d8dee9", "size": 12},
+        showlegend=False,
+    )
+    fig.update_xaxes(gridcolor="rgba(148, 163, 184, 0.16)", zeroline=False)
+    fig.update_yaxes(gridcolor="rgba(148, 163, 184, 0.10)", zeroline=False)
+
+
+def _style_line_figure(fig: go.Figure, height: int) -> None:
+    fig.update_traces(
+        line={"color": "#ef4444", "width": 3},
+        marker={"color": "#f87171", "size": 7},
     )
     fig.update_layout(
         height=height,

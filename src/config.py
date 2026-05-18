@@ -11,6 +11,8 @@ DATA_CANDIDATES = (
     Path("data/raw/accidentes.csv"),
 )
 
+FATALITY_DATA_DIR = Path("data/fallecidos")
+
 TIME_BAND_ORDER = ["madrugada", "mañana", "tarde", "noche", "Sin dato"]
 
 WEEKDAY_ORDER = [

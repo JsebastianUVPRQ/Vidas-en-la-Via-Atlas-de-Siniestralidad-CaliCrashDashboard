@@ -32,6 +32,7 @@ graph TD
 - `src/config.py`: configuración compartida de rutas, centro del mapa y orden de categorías.
 - `src/dashboard.py`: composición de la interfaz, carga de CSV desde la barra lateral, filtros, KPIs, visualizaciones y descarga.
 - `src/etl.py`: carga CSV desde `data/processed/accidentes_limpios.csv` o `data/raw/accidentes.csv`, normaliza columnas y deriva `franja_horaria`, `dia_semana` y `mes`.
+- `src/fallecidos.py`: carga CSV separados por `;` desde `data/fallecidos`, filtra registros de Cali y agrega mortalidad vial.
 - `src/insights.py`: narrativa automática de concentración por comuna, franja horaria y gravedad.
 - `src/metrics.py`: filtros, KPIs y agregaciones por comuna/franja horaria.
 - `src/mapa.py`: mapa Folium centrado en Cali con marcadores agrupados.
@@ -53,12 +54,14 @@ Estado implementado:
 - Mapa Folium con capa de calor opcional, clusters de marcadores y popups compactos.
 - Panel lateral derecho con insights automáticos, top comunas y franja horaria.
 - Gráficos narrativos de accidentes por hora del día y tendencia diaria.
+- Sección colapsable de mortalidad vial con KPIs, serie anual, rangos horarios y clase de accidente.
 - Tabla técnica colapsada de frecuencia diaria esperada por comuna y franja horaria.
 
 ## 5. Procesamiento de datos
 - Conversión de coordenadas si es necesario (EPSG:4326 → proyección local).
 - Unión con shapefiles de comunas (disponibles en SIG de Cali).
 - Agregación temporal: generar columnas `franja_horaria`, `dia_semana`, `mes`.
+- Los CSV de `data/fallecidos` son snapshots locales y se excluyen de Git por tamaño; solo se conserva `.gitkeep`.
 
 ## 6. Modelo de frecuencia
 - Agregación de conteos por comuna y franja horaria.

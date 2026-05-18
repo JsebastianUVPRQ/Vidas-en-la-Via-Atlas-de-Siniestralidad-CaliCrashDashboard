@@ -43,6 +43,7 @@ la interfaz.
 │   ├── modelo.py        # Modelo base de frecuencia esperada
 │   └── metrics.py       # Filtros, KPIs y agregaciones
 ├── data/
+│   ├── fallecidos/      # CSV locales de fallecidos viales (gitignorados)
 │   ├── raw/             # Datos crudos
 │   └── processed/       # Datos procesados
 ├── notebooks/           # Análisis exploratorio y prototipos
@@ -56,5 +57,6 @@ la interfaz.
 En desarrollo activo. La app ya permite cargar CSV desde la barra lateral,
 filtrar por comuna, fecha, franja horaria, tipo y gravedad, visualizar mapa de
 calor/clusters, KPIs compactos, insights automáticos, patrones temporales,
-rankings y una frecuencia diaria esperada basada en promedios históricos
-observados.
+rankings, una frecuencia diaria esperada basada en promedios históricos
+observados y un módulo colapsable de mortalidad vial para Cali basado en
+`data/fallecidos`.
