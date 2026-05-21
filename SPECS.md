@@ -27,6 +27,18 @@ graph TD
 - **Librerías clave:** pandas, geopandas, folium, streamlit-folium, plotly, statsmodels/scikit-learn.
 - **Modelado:** análisis de series temporales por zona (frecuencia diaria/horaria) o modelo de regresión para identificar factores de riesgo. El dashboard mostrará valores observados y, opcionalmente, predicciones.
 
+### Módulos actuales
+- `app.py`: entrada Streamlit ligera.
+- `src/config.py`: configuración compartida de rutas, centro del mapa y orden de categorías.
+- `src/dashboard.py`: composición de la interfaz, carga de CSV desde la barra lateral, filtros, KPIs, visualizaciones y descarga.
+- `src/etl.py`: carga CSV desde `data/processed/accidentes_limpios.csv` o `data/raw/accidentes.csv`, normaliza columnas y deriva `franja_horaria`, `dia_semana` y `mes`.
+- `src/fallecidos.py`: carga CSV separados por `;` desde `data/fallecidos`, filtra registros de Cali y agrega mortalidad vial.
+- `src/insights.py`: narrativa automática de concentración por comuna, franja horaria y gravedad.
+- `src/metrics.py`: filtros, KPIs y agregaciones por comuna/franja horaria.
+- `src/mapa.py`: mapa Folium centrado en Cali con marcadores agrupados.
+- `src/modelo.py`: modelo base de frecuencia esperada con promedios históricos por comuna y franja horaria.
+- `tests/`: pruebas unitarias para normalización, filtros, agregaciones y frecuencia esperada.
+
 ## 4. Funcionalidades del dashboard
 1. **Mapa de calor/ clusters** con accidentes agregados por comuna o intersección.
 2. **Selectores de fecha/hora** y día de la semana (franjas: madrugada, mañana, tarde, noche).
@@ -34,10 +46,22 @@ graph TD
 4. **Indicadores clave:** total de accidentes, promedio diario, comuna más peligrosa.
 5. **Opciones de descarga** de datos filtrados.
 
+Estado implementado:
+- Carga automática desde `data/processed/accidentes_limpios.csv`, `data/raw/accidentes.csv` o CSV subido en la barra lateral.
+- Filtros por comuna, franja horaria, tipo, gravedad y rango de fechas.
+- KPIs de total, promedio diario, comuna crítica e intersección crítica.
+- KPIs compactos de total, comuna crítica, hora crítica y tendencia semanal.
+- Mapa Folium con capa de calor opcional, clusters de marcadores y popups compactos.
+- Panel lateral derecho con insights automáticos, top comunas y franja horaria.
+- Gráficos narrativos de accidentes por hora del día y tendencia diaria.
+- Sección colapsable de mortalidad vial con KPIs, serie anual, rangos horarios y clase de accidente.
+- Tabla técnica colapsada de frecuencia diaria esperada por comuna y franja horaria.
+
 ## 5. Procesamiento de datos
 - Conversión de coordenadas si es necesario (EPSG:4326 → proyección local).
 - Unión con shapefiles de comunas (disponibles en SIG de Cali).
 - Agregación temporal: generar columnas `franja_horaria`, `dia_semana`, `mes`.
+- Los CSV de `data/fallecidos` son snapshots locales y se excluyen de Git por tamaño; solo se conserva `.gitkeep`.
 
 ## 6. Modelo de frecuencia
 - Agregación de conteos por comuna y franja horaria.
@@ -53,5 +77,8 @@ graph TD
 - No se construye aplicación móvil ni backend adicional; todo corre en Streamlit.
 
 ## 9. Próximos pasos
+- Conectar el dataset real de datos abiertos y documentar su esquema final.
+- Incorporar shapefiles de comunas para agregaciones espaciales.
+- Añadir modelo de frecuencia cuando exista suficiente histórico limpio.
 - Incorporar notificaciones o reportes automáticos.
 - Integrar datos meteorológicos para mejorar la predicción.
