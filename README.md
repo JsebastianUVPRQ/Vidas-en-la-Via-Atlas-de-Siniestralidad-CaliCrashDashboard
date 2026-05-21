@@ -1,4 +1,4 @@
-# CaliCrashDashboard - Pronóstico de Siniestralidad Vial en Cali
+# CaliCrashDashboard - Siniestralidad Vial en Cali
 
 Dashboard interactivo en Streamlit que modela la frecuencia de accidentes de tránsito en Cali, basado en datos abiertos de la Secretaría de Movilidad. La aplicación muestra un mapa con las zonas de mayor concentración de siniestros, permitiendo filtrar por comuna, intersección y franja horaria.
 
