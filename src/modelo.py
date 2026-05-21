@@ -31,7 +31,7 @@ def estimate_frequency(accidents: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=columns)
 
     grouped = (
-        accidents.groupby(["comuna", "franja_horaria"], dropna=False)
+        accidents.groupby(["comuna", "franja_horaria"], dropna=False, observed=False)
         .agg(
             accidentes_observados=("fecha", "count"),
             dias_observados=("fecha", lambda col: col.dt.date.nunique()),

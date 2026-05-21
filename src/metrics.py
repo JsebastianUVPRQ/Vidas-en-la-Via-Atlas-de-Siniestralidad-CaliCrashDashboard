@@ -131,7 +131,7 @@ def _count_by(accidents: pd.DataFrame, column: str) -> pd.DataFrame:
         return pd.DataFrame(columns=[column, "accidentes"])
 
     return (
-        accidents.groupby(column, dropna=False)
+        accidents.groupby(column, dropna=False, observed=False)
         .size()
         .reset_index(name="accidentes")
         .sort_values("accidentes", ascending=False)
