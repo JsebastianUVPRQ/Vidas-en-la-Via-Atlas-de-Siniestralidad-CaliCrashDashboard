@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import date
+from html import escape
 
 import pandas as pd
 import plotly.express as px
@@ -30,6 +31,22 @@ from src.metrics import (
 from src.modelo import estimate_frequency
 
 
+MONTH_ABBR_ES = {
+    1: "ene",
+    2: "feb",
+    3: "mar",
+    4: "abr",
+    5: "may",
+    6: "jun",
+    7: "jul",
+    8: "ago",
+    9: "sep",
+    10: "oct",
+    11: "nov",
+    12: "dic",
+}
+
+
 @dataclass(frozen=True)
 class DashboardFilters:
     """Selected dashboard filters."""
@@ -40,6 +57,21 @@ class DashboardFilters:
     gravedades: list[str]
     date_range: tuple[date, date] | list[date] | None
     show_heatmap: bool
+
+
+@dataclass(frozen=True)
+class TemporalSummary:
+    """Narrative indicators for temporal accident patterns."""
+
+    total_accidents: int
+    daily_average: float
+    critical_hour: str
+    critical_hour_count: int
+    critical_day: str
+    critical_day_count: int
+    daily_variation: str
+    hourly_insight: str
+    daily_insight: str
 
 
 def render_dashboard() -> None:
@@ -250,7 +282,7 @@ def _render_risk_rankings(accidents: pd.DataFrame) -> None:
             labels={"accidentes": "Accidentes", "comuna": "Comuna"},
         )
         _style_bar_figure(fig, height=240)
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
     st.markdown('<h3 class="panel-title">Franja horaria</h3>', unsafe_allow_html=True)
     by_band = aggregate_by_time_band(accidents)
@@ -262,7 +294,7 @@ def _render_risk_rankings(accidents: pd.DataFrame) -> None:
         labels={"accidentes": "Accidentes", "franja_horaria": ""},
     )
     _style_bar_figure(fig, height=220)
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 
 def _render_temporal_story(accidents: pd.DataFrame) -> None:
@@ -270,22 +302,18 @@ def _render_temporal_story(accidents: pd.DataFrame) -> None:
         '<h2 class="section-title">Patrones temporales</h2>',
         unsafe_allow_html=True,
     )
-    hour_col, day_col = st.columns(2, gap="large")
+    hourly = aggregate_by_hour(accidents)
+    daily = _daily_counts(accidents)
+    summary = _build_temporal_summary(accidents, hourly, daily)
+    _render_temporal_kpis(summary)
 
-    with hour_col:
-        hourly = aggregate_by_hour(accidents)
-        fig = px.bar(
-            hourly,
-            x="hora_dia",
-            y="accidentes",
-            labels={"hora_dia": "Hora del día", "accidentes": "Accidentes"},
+    trend_col, hour_col = st.columns((1.35, 1), gap="large")
+
+    with trend_col:
+        st.markdown(
+            '<h3 class="panel-title">Tendencia diaria</h3>',
+            unsafe_allow_html=True,
         )
-        fig.update_xaxes(tickmode="array", tickvals=list(range(0, 24, 3)))
-        _style_bar_figure(fig, height=320)
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-
-    with day_col:
-        daily = _daily_counts(accidents)
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(
@@ -298,9 +326,10 @@ def _render_temporal_story(accidents: pd.DataFrame) -> None:
                 fillcolor="rgba(245, 158, 11, 0.12)",
             )
         )
+        max_daily = max(int(daily["accidentes"].max()), 1) if not daily.empty else 1
         fig.update_layout(
-            height=320,
-            margin={"l": 8, "r": 8, "t": 12, "b": 8},
+            height=260,
+            margin={"l": 8, "r": 8, "t": 8, "b": 2},
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             font={"color": "#d8dee9", "size": 12},
@@ -308,15 +337,49 @@ def _render_temporal_story(accidents: pd.DataFrame) -> None:
             xaxis_title="Día",
             showlegend=False,
         )
-        fig.update_xaxes(gridcolor="rgba(148, 163, 184, 0.16)")
-        fig.update_yaxes(gridcolor="rgba(148, 163, 184, 0.16)")
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        fig.update_xaxes(
+            gridcolor="rgba(148, 163, 184, 0.16)",
+            tickformat="%d/%m",
+            ticklabelmode="period",
+            nticks=min(len(daily), 6) if not daily.empty else 3,
+            zeroline=False,
+        )
+        fig.update_yaxes(
+            gridcolor="rgba(148, 163, 184, 0.16)",
+            range=[0, max_daily * 1.18],
+            zeroline=False,
+        )
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+        _render_chart_note(summary.daily_insight, "daily-insight")
+
+    with hour_col:
+        st.markdown(
+            '<h3 class="panel-title">Distribución por hora</h3>',
+            unsafe_allow_html=True,
+        )
+        fig = px.bar(
+            hourly,
+            x="hora_dia",
+            y="accidentes",
+            labels={"hora_dia": "Hora", "accidentes": "Accidentes"},
+        )
+        fig.update_xaxes(tickmode="array", tickvals=list(range(0, 24, 4)))
+        _style_bar_figure(fig, height=260)
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+        _render_chart_note(summary.hourly_insight, "hourly-insight")
 
 
 def _render_fatalities_section(fatalities: pd.DataFrame) -> None:
     with st.expander("Mortalidad vial en Cali", expanded=False):
         if fatalities.empty:
-            st.info("No hay registros de fallecidos para Cali en data/fallecidos.")
+            _render_empty_state(
+                "No se encontraron registros de mortalidad para Cali.",
+                [
+                    "Verificar que el archivo de mortalidad esté cargado.",
+                    "Revisar el rango temporal disponible.",
+                    "Restablecer filtros o cambiar la zona analizada.",
+                ],
+            )
             return
 
         kpis = build_fatality_kpis(fatalities)
@@ -354,7 +417,7 @@ def _render_fatalities_section(fatalities: pd.DataFrame) -> None:
             _style_line_figure(fig, height=300)
             st.plotly_chart(
                 fig,
-                use_container_width=True,
+                width="stretch",
                 config={"displayModeBar": False},
             )
 
@@ -371,7 +434,7 @@ def _render_fatalities_section(fatalities: pd.DataFrame) -> None:
             _style_bar_figure(fig, height=300, color="#ef4444")
             st.plotly_chart(
                 fig,
-                use_container_width=True,
+                width="stretch",
                 config={"displayModeBar": False},
             )
 
@@ -379,7 +442,7 @@ def _render_fatalities_section(fatalities: pd.DataFrame) -> None:
         st.dataframe(
             crash_class,
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
             column_config={
                 "clase_accidente": st.column_config.TextColumn("Clase de siniestro"),
                 "fallecidos": st.column_config.ProgressColumn(
@@ -415,7 +478,7 @@ def _render_technical_detail(filtered: pd.DataFrame, clean_full: pd.DataFrame, r
         st.dataframe(
             frequency,
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
             column_config={
                 "comuna": st.column_config.TextColumn("Comuna"),
                 "franja_horaria": st.column_config.TextColumn("Franja Horaria"),
@@ -446,11 +509,171 @@ def _render_technical_detail(filtered: pd.DataFrame, clean_full: pd.DataFrame, r
 
 def _daily_counts(accidents: pd.DataFrame) -> pd.DataFrame:
     return (
-        accidents.assign(dia=accidents["fecha"].dt.date)
+        accidents.assign(dia=accidents["fecha"].dt.floor("D"))
         .groupby("dia")
         .size()
         .reset_index(name="accidentes")
     )
+
+
+def _build_temporal_summary(
+    accidents: pd.DataFrame,
+    hourly: pd.DataFrame,
+    daily: pd.DataFrame,
+) -> TemporalSummary:
+    total = len(accidents)
+    if total == 0 or daily.empty:
+        return TemporalSummary(
+            total_accidents=0,
+            daily_average=0.0,
+            critical_hour="Sin datos",
+            critical_hour_count=0,
+            critical_day="Sin datos",
+            critical_day_count=0,
+            daily_variation="Sin tendencia",
+            hourly_insight="No hay accidentes para interpretar con los filtros actuales.",
+            daily_insight="No hay registros diarios para analizar en el periodo seleccionado.",
+        )
+
+    critical_hour_row = hourly.sort_values(
+        ["accidentes", "hora_dia"],
+        ascending=[False, True],
+    ).iloc[0]
+    critical_hour = int(critical_hour_row["hora_dia"])
+    critical_hour_count = int(critical_hour_row["accidentes"])
+
+    critical_day_row = daily.sort_values(
+        ["accidentes", "dia"],
+        ascending=[False, True],
+    ).iloc[0]
+    critical_day = pd.Timestamp(critical_day_row["dia"])
+    critical_day_count = int(critical_day_row["accidentes"])
+    daily_average = total / max(len(daily), 1)
+    daily_variation = _daily_variation_label(daily)
+
+    return TemporalSummary(
+        total_accidents=total,
+        daily_average=daily_average,
+        critical_hour=f"{critical_hour:02d}:00",
+        critical_hour_count=critical_hour_count,
+        critical_day=_format_day_label(critical_day),
+        critical_day_count=critical_day_count,
+        daily_variation=daily_variation,
+        hourly_insight=_hourly_insight(hourly, total),
+        daily_insight=_daily_insight(daily, daily_average, daily_variation),
+    )
+
+
+def _render_temporal_kpis(summary: TemporalSummary) -> None:
+    cards = [
+        ("Accidentes", f"{summary.total_accidents:,}", "Registros filtrados"),
+        ("Promedio diario", f"{summary.daily_average:.1f}", "Accidentes por día"),
+        ("Hora crítica", summary.critical_hour, f"{summary.critical_hour_count} registros"),
+        ("Día crítico", summary.critical_day, f"{summary.critical_day_count} registros"),
+    ]
+    card_html = "".join(
+        (
+            '<article class="temporal-kpi">'
+            f"<span>{escape(label)}</span>"
+            f"<strong>{escape(value)}</strong>"
+            f"<small>{escape(caption)}</small>"
+            "</article>"
+        )
+        for label, value, caption in cards
+    )
+    st.markdown(
+        f'<section class="temporal-kpi-strip">{card_html}</section>',
+        unsafe_allow_html=True,
+    )
+
+
+def _render_chart_note(message: str, key: str) -> None:
+    st.markdown(
+        f'<div class="chart-note" data-note="{key}">{escape(message)}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _render_empty_state(title: str, actions: list[str]) -> None:
+    items = "".join(f"<li>{escape(action)}</li>" for action in actions)
+    st.markdown(
+        f"""
+        <div class="empty-state">
+            <div class="empty-state-badge">Info</div>
+            <div>
+                <strong>{escape(title)}</strong>
+                <p>Esto no necesariamente indica un error de la aplicación.</p>
+                <ul>{items}</ul>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _hourly_insight(hourly: pd.DataFrame, total: int) -> str:
+    if total == 0 or hourly.empty:
+        return "No hay datos suficientes para identificar una concentración horaria."
+
+    max_count = int(hourly["accidentes"].max())
+    if max_count == 0:
+        return "No hay datos suficientes para identificar una concentración horaria."
+
+    active_hours = hourly[hourly["accidentes"].gt(0)]
+    peak_hours = active_hours[active_hours["accidentes"].eq(max_count)]["hora_dia"].astype(int)
+    share = max_count / total
+    if len(peak_hours) > 3 or share < 0.2:
+        return "La distribución horaria no presenta un patrón dominante; los eventos están dispersos durante el día."
+
+    if len(peak_hours) == 1:
+        hour = int(peak_hours.iloc[0])
+        return f"La mayor frecuencia se observa a las {hour:02d}:00, con {max_count} accidentes registrados."
+
+    formatted = ", ".join(f"{int(hour):02d}:00" for hour in peak_hours.tolist())
+    return f"Las horas con mayor frecuencia son {formatted}, cada una con {max_count} accidentes registrados."
+
+
+def _daily_insight(
+    daily: pd.DataFrame,
+    daily_average: float,
+    daily_variation: str,
+) -> str:
+    if daily.empty:
+        return "No hay registros diarios para analizar en el periodo seleccionado."
+
+    max_row = daily.sort_values(["accidentes", "dia"], ascending=[False, True]).iloc[0]
+    max_day = _format_day_label(pd.Timestamp(max_row["dia"]))
+    max_count = int(max_row["accidentes"])
+    if len(daily) == 1:
+        return f"El periodo filtrado contiene un solo día: {max_day}, con {max_count} accidentes."
+
+    return (
+        f"La tendencia diaria se mantiene {daily_variation.lower()}; el máximo fue "
+        f"{max_day} con {max_count} accidentes, frente a un promedio de {daily_average:.1f}."
+    )
+
+
+def _daily_variation_label(daily: pd.DataFrame) -> str:
+    if len(daily) < 2:
+        return "Sin tendencia"
+
+    first = float(daily.iloc[0]["accidentes"])
+    last = float(daily.iloc[-1]["accidentes"])
+    if first == 0:
+        delta = 100.0 if last > 0 else 0.0
+    else:
+        delta = ((last - first) / first) * 100
+
+    if abs(delta) < 10:
+        return "Estable"
+    if delta > 0:
+        return "Al alza"
+    return "A la baja"
+
+
+def _format_day_label(value: pd.Timestamp) -> str:
+    month = MONTH_ABBR_ES.get(value.month, f"{value.month:02d}")
+    return f"{value.day:02d} {month} {value.year}"
 
 
 def _style_bar_figure(fig: go.Figure, height: int, color: str = "#7dd3fc") -> None:
@@ -655,17 +878,119 @@ def _inject_dashboard_css() -> None:
             text-overflow: ellipsis;
         }
 
-        .section-title {
+        h2.section-title {
             color: var(--text);
-            font-size: 1.05rem;
+            font-size: 1.45rem !important;
             line-height: 1.2;
             margin: 0.3rem 0 0.7rem;
+            padding: 0;
         }
 
-        .panel-title {
+        h3.panel-title {
             color: var(--text);
-            font-size: 0.9rem;
-            margin: 1rem 0 0.2rem;
+            font-size: 1.05rem !important;
+            line-height: 1.2;
+            margin: 0.65rem 0 0.1rem;
+            padding: 0;
+        }
+
+        .temporal-kpi-strip {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.65rem;
+            margin: -0.2rem 0 0.5rem;
+        }
+
+        .temporal-kpi {
+            background: #0f1720;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            min-height: 4.2rem;
+            padding: 0.62rem 0.75rem;
+        }
+
+        .temporal-kpi span,
+        .temporal-kpi small {
+            display: block;
+            color: var(--muted);
+            font-size: 0.74rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .temporal-kpi strong {
+            display: block;
+            color: var(--text);
+            font-size: 1.12rem;
+            line-height: 1.2;
+            margin: 0.16rem 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .chart-note {
+            background: rgba(15, 23, 32, 0.94);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-left: 3px solid var(--accent);
+            border-radius: 8px;
+            color: #e2e8f0;
+            font-size: 0.84rem;
+            line-height: 1.35;
+            margin: -0.15rem 0 0.65rem;
+            padding: 0.62rem 0.72rem;
+        }
+
+        .chart-note[data-note="hourly-insight"] {
+            border-left-color: var(--data);
+        }
+
+        .empty-state {
+            display: flex;
+            gap: 0.85rem;
+            align-items: flex-start;
+            background: #101923;
+            border: 1px solid rgba(148, 163, 184, 0.24);
+            border-radius: 8px;
+            color: #e5e7eb;
+            margin: 0.75rem 0 0.15rem;
+            padding: 0.9rem 1rem;
+        }
+
+        .empty-state-badge {
+            flex: 0 0 auto;
+            border: 1px solid rgba(125, 211, 252, 0.38);
+            border-radius: 999px;
+            color: #bae6fd;
+            font-size: 0.72rem;
+            font-weight: 700;
+            padding: 0.18rem 0.48rem;
+            text-transform: uppercase;
+        }
+
+        .empty-state strong {
+            color: var(--text);
+            display: block;
+            font-size: 0.94rem;
+            margin-bottom: 0.2rem;
+        }
+
+        .empty-state p {
+            color: var(--muted);
+            font-size: 0.84rem;
+            margin: 0 0 0.35rem;
+        }
+
+        .empty-state ul {
+            color: #cbd5e1;
+            font-size: 0.82rem;
+            margin: 0;
+            padding-left: 1rem;
+        }
+
+        .empty-state li {
+            margin: 0.12rem 0;
         }
 
         .insight-item {
@@ -715,6 +1040,14 @@ def _inject_dashboard_css() -> None:
 
             .kpi-strip {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .temporal-kpi-strip {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .empty-state {
+                flex-direction: column;
             }
         }
         </style>
