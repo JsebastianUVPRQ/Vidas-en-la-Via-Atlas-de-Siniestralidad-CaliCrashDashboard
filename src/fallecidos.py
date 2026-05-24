@@ -190,8 +190,29 @@ def _extract_month(value: object) -> int | None:
 
 
 def _extract_weekday(value: object) -> str:
-    code = str(value).split(".", maxsplit=1)[0].strip()
-    return WEEKDAY_BY_CODE.get(code, "Sin información")
+    parts = str(value).split(".", maxsplit=1)
+    code = parts[0].strip()
+    if code in WEEKDAY_BY_CODE:
+        return WEEKDAY_BY_CODE[code]
+
+    # Try parsing by name directly if the numeric prefix is missing
+    normalized = _normalize_text(value)
+    name_map = {
+        "LUNES": "lunes",
+        "MARTES": "martes",
+        "MIERCOLES": "miércoles",
+        "MIÉRCOLES": "miércoles",
+        "JUEVES": "jueves",
+        "VIERNES": "viernes",
+        "SABADO": "sábado",
+        "SÁBADO": "sábado",
+        "DOMINGO": "domingo",
+    }
+    for key, name in name_map.items():
+        if key in normalized:
+            return name
+
+    return "Sin información"
 
 
 def _normalize_text(value: object) -> str:

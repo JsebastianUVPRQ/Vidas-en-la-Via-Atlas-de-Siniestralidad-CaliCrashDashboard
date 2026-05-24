@@ -44,10 +44,14 @@ def filter_accidents(
     if gravedades:
         filtered = filtered[filtered["gravedad"].isin(gravedades)]
 
-    if date_range and len(date_range) == 2:
-        start_date, end_date = date_range
+    if date_range:
         dates = filtered["fecha"].dt.date
-        filtered = filtered[(dates >= start_date) & (dates <= end_date)]
+        if len(date_range) == 2:
+            start_date, end_date = date_range
+            filtered = filtered[(dates >= start_date) & (dates <= end_date)]
+        elif len(date_range) == 1:
+            start_date = date_range[0]
+            filtered = filtered[dates == start_date]
 
     return filtered.reset_index(drop=True)
 
@@ -172,9 +176,18 @@ def _weekly_trend(accidents: pd.DataFrame) -> tuple[str, float]:
     if len(daily) < 2:
         return "Sin tendencia", 0.0
 
-    split_index = len(daily) // 2
-    first_average = float(daily.iloc[:split_index].mean())
-    second_average = float(daily.iloc[split_index:].mean())
+    if len(daily) >= 14:
+        # Compare last 7 days vs previous 7 days for a real weekly trend
+        first_period = daily.iloc[-14:-7]
+        second_period = daily.iloc[-7:]
+    else:
+        # Fallback to splitting the period in half for short ranges
+        split_index = len(daily) // 2
+        first_period = daily.iloc[:split_index]
+        second_period = daily.iloc[split_index:]
+
+    first_average = float(first_period.mean())
+    second_average = float(second_period.mean())
     if first_average == 0:
         delta = 100.0 if second_average > 0 else 0.0
     else:
