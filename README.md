@@ -28,6 +28,9 @@ la interfaz.
 ## ☁️ Despliegue en Streamlit Cloud
 - Conecta tu repositorio de GitHub a [Streamlit Cloud](https://share.streamlit.io).
 - Selecciona el archivo principal `app.py`.
+- En **Advanced settings**, selecciona Python 3.12 para mantener el entorno
+  alineado con el desarrollo local y evitar builds contra versiones nuevas sin
+  ruedas binarias para dependencias científicas.
 - Listo, la app se actualizará con cada push.
 
 ## 📁 Estructura del proyecto
