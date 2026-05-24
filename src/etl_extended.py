@@ -293,6 +293,8 @@ def _postprocess_extended(data: pd.DataFrame) -> pd.DataFrame:
     for column in text_columns:
         data[column] = data[column].map(_clean_text)
 
+    data["departamento"] = data["departamento"].map(_normalize_location_name)
+    data["municipio"] = data["municipio"].map(_normalize_location_name)
     missing_weekday = data["dia_semana"].eq("Sin dato") & data["fecha"].notna()
     data.loc[missing_weekday, "dia_semana"] = data.loc[missing_weekday, "fecha"].dt.day_name().map(
         _weekday_to_spanish
@@ -401,6 +403,27 @@ def _normalize_ascii(value: object) -> str:
     text = unicodedata.normalize("NFKD", str(value))
     text = "".join(char for char in text if not unicodedata.combining(char))
     return re.sub(r"[^A-Z0-9]+", "_", text.upper()).strip("_")
+
+
+def _normalize_location_name(value: str) -> str:
+    lookup = {
+        "VALLE_DEL_CAUCA": "Valle del Cauca",
+        "CALI": "Cali",
+        "TULUA": "Tuluá",
+        "PALMIRA": "Palmira",
+        "CANDELARIA": "Candelaria",
+        "YUMBO": "Yumbo",
+        "JAMUNDI": "Jamundí",
+        "CARTAGO": "Cartago",
+        "BUENAVENTURA": "Buenaventura",
+        "GUADALAJARA_DE_BUGA": "Guadalajara de Buga",
+    }
+    key = _normalize_ascii(value)
+    if key in lookup:
+        return lookup[key]
+    if key == "SIN_DATO":
+        return "Sin dato"
+    return str(value).title()
 
 
 def _normalize_weekday(value: str) -> str:
