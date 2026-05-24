@@ -14,9 +14,7 @@ __pycache__/
 .streamlit/secrets.toml
 
 # Data snapshots
-data/raw/*
-data/processed/*
-data/fallecidos/*
+
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/fallecidos/.gitkeep
