@@ -25,6 +25,25 @@ Si no existe un archivo en `data/processed/accidentes_limpios.csv` o
 `data/raw/accidentes.csv`, la aplicación usa una muestra mínima para validar
 la interfaz.
 
+## 📥 Adquisición de datos externos
+El proyecto incluye un catálogo reproducible de fuentes oficiales para ampliar
+la base de siniestralidad vial de Cali y municipios del Valle del Cauca.
+
+```powershell
+venv\Scripts\python.exe scripts\download_data_sources.py --list
+venv\Scripts\python.exe scripts\download_data_sources.py
+venv\Scripts\python.exe scripts\profile_data_sources.py
+```
+
+Los CSV se descargan en `data/raw/external/` con un archivo lateral de metadatos
+por fuente. Esa carpeta queda fuera de Git por tamaño y trazabilidad.
+
+Para incluir la vista opcional del RUNT/MinTransporte filtrada a Valle del Cauca:
+
+```powershell
+venv\Scripts\python.exe scripts\download_data_sources.py --include-optional
+```
+
 ## ☁️ Despliegue en Streamlit Cloud
 - Conecta tu repositorio de GitHub a [Streamlit Cloud](https://share.streamlit.io).
 - Selecciona el archivo principal `app.py`.
