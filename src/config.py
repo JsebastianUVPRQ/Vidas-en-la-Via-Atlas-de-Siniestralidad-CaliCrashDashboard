@@ -12,6 +12,7 @@ DATA_CANDIDATES = (
 )
 
 FATALITY_DATA_DIR = Path("data/fallecidos")
+COMUNAS_GEOJSON_PATH = Path("data/raw/geospatial/comunas_cali.geojson")
 
 TIME_BAND_ORDER = ["madrugada", "mañana", "tarde", "noche", "Sin dato"]
 

@@ -57,6 +57,7 @@ class DashboardFilters:
     gravedades: list[str]
     date_range: tuple[date, date] | list[date] | None
     show_heatmap: bool
+    show_comuna_zones: bool
 
 
 @dataclass(frozen=True)
@@ -105,7 +106,11 @@ def render_dashboard() -> None:
     )
 
     _render_kpi_strip(filtered)
-    _render_operations_view(filtered, filters.show_heatmap)
+    _render_operations_view(
+        filtered,
+        filters.show_heatmap,
+        filters.show_comuna_zones,
+    )
     _render_temporal_story(filtered)
     _render_fatalities_section(fatalities)
     _render_technical_detail(filtered, accidents, raw_accidents)
@@ -194,6 +199,7 @@ def _render_filters(accidents: pd.DataFrame) -> DashboardFilters:
         )
 
         show_heatmap = st.toggle("Mapa de calor", value=True)
+        show_comuna_zones = st.toggle("Zonificación de comunas", value=True)
 
     return DashboardFilters(
         comunas=selected_comunas,
@@ -202,6 +208,7 @@ def _render_filters(accidents: pd.DataFrame) -> DashboardFilters:
         gravedades=selected_severities,
         date_range=selected_dates,
         show_heatmap=show_heatmap,
+        show_comuna_zones=show_comuna_zones,
     )
 
 
@@ -230,7 +237,11 @@ def _render_kpi_strip(accidents: pd.DataFrame) -> None:
     )
 
 
-def _render_operations_view(accidents: pd.DataFrame, show_heatmap: bool) -> None:
+def _render_operations_view(
+    accidents: pd.DataFrame,
+    show_heatmap: bool,
+    show_comuna_zones: bool,
+) -> None:
     map_col, insight_col = st.columns((2.35, 1), gap="large")
     with map_col:
         st.markdown(
@@ -242,7 +253,11 @@ def _render_operations_view(accidents: pd.DataFrame, show_heatmap: bool) -> None
                 "💡 **Rendimiento:** Se muestra una muestra representativa de 1,500 marcadores individuales para "
                 "evitar ralentizar el navegador, pero el mapa de calor y las estadísticas utilizan el 100% de los datos."
             )
-        accident_map = build_accident_map(accidents, show_heatmap=show_heatmap)
+        accident_map = build_accident_map(
+            accidents,
+            show_heatmap=show_heatmap,
+            show_comuna_zones=show_comuna_zones,
+        )
         st_folium(accident_map, use_container_width=True, height=600, key="mapa_operativo", returned_objects=[])
 
     with insight_col:
