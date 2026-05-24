@@ -80,6 +80,7 @@ DATA_SOURCES: tuple[DataSource, ...] = (
         output_filename="cali_muertes_2016_2023.csv",
         notes="Víctimas fatales por actor vial en Cali.",
         csv_separator=";",
+        encoding="latin1",
     ),
     DataSource(
         source_id="valle_candelaria_accidentalidad",

@@ -33,10 +33,14 @@ la base de siniestralidad vial de Cali y municipios del Valle del Cauca.
 venv\Scripts\python.exe scripts\download_data_sources.py --list
 venv\Scripts\python.exe scripts\download_data_sources.py
 venv\Scripts\python.exe scripts\profile_data_sources.py
+venv\Scripts\python.exe scripts\build_extended_accidents.py --summary
 ```
 
 Los CSV se descargan en `data/raw/external/` con un archivo lateral de metadatos
 por fuente. Esa carpeta queda fuera de Git por tamaño y trazabilidad.
+El normalizador genera `data/processed/accidentes_ampliados.csv` para el Valle
+del Cauca y `data/processed/accidentes_cali_ampliados.csv` para la acotación a
+Cali.
 
 Para incluir la vista opcional del RUNT/MinTransporte filtrada a Valle del Cauca:
 
