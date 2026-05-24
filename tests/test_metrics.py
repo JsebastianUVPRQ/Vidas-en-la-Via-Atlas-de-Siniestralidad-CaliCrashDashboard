@@ -82,3 +82,42 @@ def test_aggregate_by_hour_returns_full_day() -> None:
     assert len(result) == 24
     assert result.loc[result["hora_dia"] == 8, "accidentes"].iloc[0] == 2
     assert result.loc[result["hora_dia"] == 21, "accidentes"].iloc[0] == 1
+
+
+def test_filter_accidents_by_single_date() -> None:
+    accidents = _sample_accidents()
+
+    result = filter_accidents(
+        accidents,
+        date_range=(pd.Timestamp("2025-01-01").date(),)
+    )
+
+    assert len(result) == 2
+
+
+def test_build_kpis_weekly_trend_long_period() -> None:
+    # Create 14 days of data: day 0 to 13.
+    # First week (day 0-6): 2 accidents/day = 14 accidents.
+    # Second week (day 7-13): 1 accident/day = 7 accidents.
+    # The trend should be "A la baja" with delta = -50%
+    dates = []
+    for i in range(14):
+        date_str = f"2025-01-{i+1:02d}"
+        count = 2 if i < 7 else 1
+        for _ in range(count):
+            dates.append(date_str)
+    
+    df = pd.DataFrame({
+        "fecha": pd.to_datetime(dates),
+        "hora": ["12:00"] * len(dates),
+        "comuna": ["2"] * len(dates),
+        "franja_horaria": ["tarde"] * len(dates),
+        "tipo_accidente": ["Choque"] * len(dates),
+        "gravedad": ["Solo daños"] * len(dates),
+        "interseccion": ["A"] * len(dates),
+        "dia_semana": ["lunes"] * len(dates)
+    })
+    
+    result = build_kpis(df)
+    assert result.weekly_trend == "A la baja"
+    assert result.weekly_trend_delta == -50.0

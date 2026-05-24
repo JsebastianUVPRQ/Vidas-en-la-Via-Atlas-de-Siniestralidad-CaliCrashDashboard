@@ -18,7 +18,7 @@ def build_accident_map(
     crash_map = folium.Map(
         location=CALI_CENTER,
         zoom_start=12,
-        tiles="CartoDB positron",
+        tiles="CartoDB dark_matter",
         control_scale=True,
     )
 
@@ -42,7 +42,13 @@ def build_accident_map(
         ).add_to(crash_map)
 
     marker_cluster = MarkerCluster(name="Accidentes").add_to(crash_map)
-    for accident in accidents.itertuples(index=False):
+    
+    # Sample markers if dataset is large to prevent browser freeze/crash
+    marker_data = accidents
+    if len(accidents) > 1500:
+        marker_data = accidents.sample(n=1500, random_state=42)
+
+    for accident in marker_data.itertuples(index=False):
         popup = folium.Popup(
             _popup_html(
                 comuna=str(accident.comuna),

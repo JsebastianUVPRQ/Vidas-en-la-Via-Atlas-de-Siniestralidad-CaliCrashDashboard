@@ -10,7 +10,7 @@ import streamlit as st
 from streamlit_folium import st_folium
 
 from src.config import DATA_CANDIDATES, FATALITY_DATA_DIR, TIME_BAND_ORDER
-from src.etl import load_accident_data, normalize_accident_data
+from src.etl import build_sample_accidents, load_accident_data, normalize_accident_data
 from src.fallecidos import (
     aggregate_fatalities_by_crash_class,
     aggregate_fatalities_by_time_range,
@@ -53,13 +53,13 @@ def render_dashboard() -> None:
     _inject_dashboard_css()
 
     uploaded_file = st.sidebar.file_uploader("CSV de accidentes", type=["csv"])
-    accidents = _load_data(uploaded_file)
+    accidents, raw_accidents = _load_data_with_raw(uploaded_file)
     fatalities = _load_fatalities()
 
     _render_header(accidents)
     if accidents.empty:
         st.warning("No hay registros válidos para visualizar.")
-        st_folium(build_accident_map(accidents), use_container_width=True, height=560)
+        st_folium(build_accident_map(accidents), use_container_width=True, height=560, key="mapa_vacio", returned_objects=[])
         return
 
     filters = _render_filters(accidents)
@@ -76,14 +76,26 @@ def render_dashboard() -> None:
     _render_operations_view(filtered, filters.show_heatmap)
     _render_temporal_story(filtered)
     _render_fatalities_section(fatalities)
-    _render_technical_detail(filtered)
+    _render_technical_detail(filtered, accidents, raw_accidents)
 
 
 @st.cache_data(show_spinner=False)
-def _load_data(uploaded_file: object | None) -> pd.DataFrame:
+def _load_data_with_raw(uploaded_file: object | None) -> tuple[pd.DataFrame, pd.DataFrame]:
     if uploaded_file is not None:
-        return normalize_accident_data(pd.read_csv(uploaded_file))
-    return load_accident_data(DATA_CANDIDATES)
+        raw = pd.read_csv(uploaded_file)
+        return normalize_accident_data(raw), raw
+
+    for path in DATA_CANDIDATES:
+        if path.exists():
+            suffix = path.suffix.lower()
+            if suffix == ".parquet":
+                raw = pd.read_parquet(path)
+            else:
+                raw = pd.read_csv(path)
+            return normalize_accident_data(raw), raw
+
+    sample = build_sample_accidents()
+    return normalize_accident_data(sample), sample
 
 
 @st.cache_data(show_spinner=False)
@@ -193,8 +205,13 @@ def _render_operations_view(accidents: pd.DataFrame, show_heatmap: bool) -> None
             '<h2 class="section-title">Mapa operativo</h2>',
             unsafe_allow_html=True,
         )
+        if len(accidents) > 1500:
+            st.info(
+                "💡 **Rendimiento:** Se muestra una muestra representativa de 1,500 marcadores individuales para "
+                "evitar ralentizar el navegador, pero el mapa de calor y las estadísticas utilizan el 100% de los datos."
+            )
         accident_map = build_accident_map(accidents, show_heatmap=show_heatmap)
-        st_folium(accident_map, use_container_width=True, height=600)
+        st_folium(accident_map, use_container_width=True, height=600, key="mapa_operativo", returned_objects=[])
 
     with insight_col:
         _render_insight_panel(accidents)
@@ -303,11 +320,26 @@ def _render_fatalities_section(fatalities: pd.DataFrame) -> None:
             return
 
         kpis = build_fatality_kpis(fatalities)
-        cols = st.columns(4)
-        cols[0].metric("Fallecidos", f"{kpis.total_fatalities:,}")
-        cols[1].metric("Año crítico", kpis.top_year)
-        cols[2].metric("Horario crítico", kpis.top_time_range)
-        cols[3].metric("Clase crítica", kpis.top_crash_class)
+        fatality_cards = [
+            ("Total Fallecidos", f"{kpis.total_fatalities:,}", "Registros históricos"),
+            ("Año crítico", str(kpis.top_year), "Mayor mortalidad"),
+            ("Horario crítico", str(kpis.top_time_range), "Franja de mayor riesgo"),
+            ("Clase de siniestro", str(kpis.top_crash_class), "Tipo más frecuente"),
+        ]
+        card_html = "".join(
+            (
+                '<article class="kpi-card kpi-card-fatality">'
+                f"<span>{label}</span>"
+                f"<strong>{value}</strong>"
+                f"<small>{caption}</small>"
+                "</article>"
+            )
+            for label, value, caption in fatality_cards
+        )
+        st.markdown(
+            f'<section class="kpi-strip fatality-strip">{card_html}</section>',
+            unsafe_allow_html=True,
+        )
 
         year_col, profile_col = st.columns(2, gap="large")
         with year_col:
@@ -344,17 +376,51 @@ def _render_fatalities_section(fatalities: pd.DataFrame) -> None:
             )
 
         crash_class = aggregate_fatalities_by_crash_class(fatalities).head(10)
-        st.dataframe(crash_class, hide_index=True, use_container_width=True)
+        st.dataframe(
+            crash_class,
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "clase_accidente": st.column_config.TextColumn("Clase de siniestro"),
+                "fallecidos": st.column_config.ProgressColumn(
+                    "Fallecidos",
+                    format="%d",
+                    min_value=0,
+                    max_value=int(crash_class["fallecidos"].max()) if not crash_class.empty else 100,
+                ),
+            },
+        )
 
 
-def _render_technical_detail(accidents: pd.DataFrame) -> None:
-    with st.expander("Ver detalle técnico", expanded=False):
-        frequency = estimate_frequency(accidents)
+def _render_technical_detail(filtered: pd.DataFrame, clean_full: pd.DataFrame, raw_full: pd.DataFrame) -> None:
+    with st.expander("Ver detalle técnico y control de calidad", expanded=False):
+        st.markdown("### Control de calidad de importación")
+        from src.etl import data_quality_report
+        quality = data_quality_report(raw_full, clean_full)
+
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Registros cargados", f"{quality.total_raw:,}")
+        col2.metric("Registros válidos", f"{quality.total_clean:,}")
+        col3.metric("Fechas inválidas", f"{quality.null_fecha:,}")
+        col4.metric("Coordenadas inválidas (o fuera de Cali)", f"{quality.null_coords + quality.out_of_bounds:,}")
+
+        if quality.out_of_bounds > 0:
+            st.caption(
+                f"ℹ️ {quality.out_of_bounds:,} registros fueron filtrados por estar fuera de los límites geográficos de Cali."
+            )
+
+        st.write("---")
+        st.markdown("### Frecuencia esperada por Comuna y Franja Horaria")
+        frequency = estimate_frequency(filtered)
         st.dataframe(
             frequency,
             hide_index=True,
             use_container_width=True,
             column_config={
+                "comuna": st.column_config.TextColumn("Comuna"),
+                "franja_horaria": st.column_config.TextColumn("Franja Horaria"),
+                "accidentes_observados": st.column_config.NumberColumn("Accidentes Observados", format="%d"),
+                "dias_observados": st.column_config.NumberColumn("Días Observados", format="%d"),
                 "frecuencia_diaria_esperada": st.column_config.NumberColumn(
                     "Frecuencia diaria",
                     format="%.2f",
@@ -367,11 +433,12 @@ def _render_technical_detail(accidents: pd.DataFrame) -> None:
                     "IC 95 % sup.",
                     format="%.2f",
                 ),
+                "nivel_riesgo": st.column_config.TextColumn("Nivel de Riesgo"),
             },
         )
         st.download_button(
-            "Descargar datos filtrados",
-            data=accidents.to_csv(index=False).encode("utf-8"),
+            "Descargar datos filtrados (CSV)",
+            data=filtered.to_csv(index=False).encode("utf-8"),
             file_name="accidentes_filtrados.csv",
             mime="text/csv",
         )
@@ -436,6 +503,8 @@ def _inject_dashboard_css() -> None:
     st.markdown(
         """
         <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
         :root {
             --bg: #0b0f14;
             --panel: #111820;
@@ -446,6 +515,10 @@ def _inject_dashboard_css() -> None:
             --accent: #f59e0b;
             --risk: #ef4444;
             --data: #7dd3fc;
+        }
+
+        .stApp, .stApp label, .stApp p, .stApp h1, .stApp h2, .stApp h3 {
+            font-family: 'Outfit', sans-serif !important;
         }
 
         .stApp {
@@ -531,6 +604,34 @@ def _inject_dashboard_css() -> None:
             border-radius: 8px;
             padding: 0.78rem 0.9rem;
             min-height: 5rem;
+            transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.22s, box-shadow 0.22s;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(245, 158, 11, 0.35);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+        }
+
+        .kpi-card-fatality {
+            border-left: 3px solid var(--risk) !important;
+        }
+
+        .kpi-card-fatality:hover {
+            border-color: rgba(239, 68, 68, 0.35);
+            box-shadow: 0 6px 16px rgba(239, 68, 68, 0.08);
+        }
+
+        .kpi-card-fatality strong {
+            color: #fca5a5 !important;
+        }
+
+        .fatality-strip {
+            position: static !important;
+            backdrop-filter: none !important;
+            background: transparent !important;
+            padding: 0 0 1rem 0 !important;
+            margin-bottom: 0.5rem !important;
         }
 
         .kpi-card span,
@@ -592,6 +693,14 @@ def _inject_dashboard_css() -> None:
             color: #111827;
             border-radius: 7px;
             font-weight: 700;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .stButton button:hover,
+        .stDownloadButton button:hover {
+            opacity: 0.9;
+            transform: scale(1.02);
+            box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25);
         }
 
         @media (max-width: 900px) {

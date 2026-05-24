@@ -100,3 +100,14 @@ def test_normalize_fatality_data_marks_unknown_time_ranges() -> None:
     result = normalize_fatality_data(raw)
 
     assert result.loc[0, "rango_3h"] == "Sin información"
+
+
+def test_normalize_fatality_data_extracts_weekday_name_without_prefix() -> None:
+    raw = _raw_fatalities()
+    raw.loc[0, "DiaOcurrencia"] = "DOMINGO"
+    raw.loc[1, "DiaOcurrencia"] = "SÁBADO"
+
+    result = normalize_fatality_data(raw)
+
+    assert result.loc[0, "dia_semana"] == "domingo"
+    assert result.loc[1, "dia_semana"] == "sábado"
