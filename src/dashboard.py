@@ -85,17 +85,23 @@ def render_dashboard() -> None:
     )
     _inject_dashboard_css()
 
-    uploaded_file = st.sidebar.file_uploader("CSV de accidentes", type=["csv"])
+    uploaded_file = _render_sidebar_upload()
     accidents, raw_accidents = _load_data_with_raw(uploaded_file)
     fatalities = _load_fatalities()
 
     _render_header(accidents)
     if accidents.empty:
         st.warning("No hay registros válidos para visualizar.")
-        st_folium(build_accident_map(accidents), use_container_width=True, height=560, key="mapa_vacio", returned_objects=[])
+        st_folium(
+            build_accident_map(accidents),
+            use_container_width=True,
+            height=560,
+            key="mapa_vacio",
+            returned_objects=[],
+        )
         return
 
-    filters = _render_filters(accidents)
+    filters = _render_filter_bar(accidents)
     filtered = filter_accidents(
         accidents,
         comunas=filters.comunas,
@@ -105,6 +111,7 @@ def render_dashboard() -> None:
         date_range=filters.date_range,
     )
 
+    _render_hero_insight(filtered)
     _render_kpi_strip(filtered)
     _render_operations_view(
         filtered,
@@ -140,6 +147,13 @@ def _load_fatalities() -> pd.DataFrame:
     return load_fatality_data(FATALITY_DATA_DIR)
 
 
+def _render_sidebar_upload() -> object | None:
+    with st.sidebar:
+        st.markdown("### Fuente de datos")
+        st.caption("Carga un CSV compatible para reemplazar la muestra local.")
+        return st.file_uploader("CSV de accidentes", type=["csv"])
+
+
 def _render_header(accidents: pd.DataFrame) -> None:
     min_date = accidents["fecha"].min().date() if not accidents.empty else "sin datos"
     max_date = accidents["fecha"].max().date() if not accidents.empty else "sin datos"
@@ -157,40 +171,56 @@ def _render_header(accidents: pd.DataFrame) -> None:
     )
 
 
-def _render_filters(accidents: pd.DataFrame) -> DashboardFilters:
-    with st.sidebar:
-        st.markdown("### Filtros")
+def _render_filter_bar(accidents: pd.DataFrame) -> DashboardFilters:
+    st.markdown(
+        '<section class="filter-heading"><span>Filtros de análisis</span></section>',
+        unsafe_allow_html=True,
+    )
 
-        comunas = _sorted_unique(accidents, "comuna")
-        selected_comunas = st.multiselect("Comuna", comunas, default=comunas)
+    filter_cols = st.columns((1, 1.05, 1.45, 1.1, 1.45), gap="small")
+    comunas = _sorted_unique(accidents, "comuna")
+    with filter_cols[0]:
+        selected_comunas = st.multiselect(
+            "Comuna",
+            comunas,
+            default=[],
+            placeholder="Todas",
+        )
 
-        available_bands = [
-            band
-            for band in TIME_BAND_ORDER
-            if band in set(accidents["franja_horaria"].astype(str))
-        ]
+    available_bands = [
+        band
+        for band in TIME_BAND_ORDER
+        if band in set(accidents["franja_horaria"].astype(str))
+    ]
+    with filter_cols[1]:
         selected_bands = st.multiselect(
             "Franja horaria",
             available_bands,
-            default=available_bands,
+            default=[],
+            placeholder="Todas",
         )
 
-        tipos_accidente = _sorted_unique(accidents, "tipo_accidente")
+    tipos_accidente = _sorted_unique(accidents, "tipo_accidente")
+    with filter_cols[2]:
         selected_types = st.multiselect(
             "Tipo de accidente",
             tipos_accidente,
-            default=tipos_accidente,
+            default=[],
+            placeholder="Todos",
         )
 
-        gravedades = _sorted_unique(accidents, "gravedad")
+    gravedades = _sorted_unique(accidents, "gravedad")
+    with filter_cols[3]:
         selected_severities = st.multiselect(
             "Gravedad",
             gravedades,
-            default=gravedades,
+            default=[],
+            placeholder="Todas",
         )
 
-        min_date = accidents["fecha"].min().date()
-        max_date = accidents["fecha"].max().date()
+    min_date = accidents["fecha"].min().date()
+    max_date = accidents["fecha"].max().date()
+    with filter_cols[4]:
         selected_dates = st.date_input(
             "Rango de fechas",
             value=(min_date, max_date),
@@ -198,8 +228,15 @@ def _render_filters(accidents: pd.DataFrame) -> DashboardFilters:
             max_value=max_date,
         )
 
+    st.markdown(
+        '<section class="filter-layer-heading"><span>Capas del mapa</span></section>',
+        unsafe_allow_html=True,
+    )
+    layer_cols = st.columns((0.9, 1.05, 4), gap="small")
+    with layer_cols[0]:
         show_heatmap = st.toggle("Mapa de calor", value=True)
-        show_comuna_zones = st.toggle("Zonificación de comunas", value=True)
+    with layer_cols[1]:
+        show_comuna_zones = st.toggle("Comunas", value=True)
 
     return DashboardFilters(
         comunas=selected_comunas,
@@ -212,24 +249,54 @@ def _render_filters(accidents: pd.DataFrame) -> DashboardFilters:
     )
 
 
+def _render_hero_insight(accidents: pd.DataFrame) -> None:
+    kpis = build_kpis(accidents)
+    insights = build_insights(accidents)
+    primary_insight = insights[0] if insights else _empty_primary_insight(accidents)
+    trend_class = _trend_class(kpis.weekly_trend)
+    trend_label = _trend_copy(kpis.weekly_trend)
+
+    st.markdown(
+        f"""
+        <section class="hero-insight">
+            <div>
+                <p class="hero-kicker">Lectura principal</p>
+                <h2>{escape(primary_insight)}</h2>
+            </div>
+            <div class="hero-context">
+                <span class="status-pill {trend_class}">{escape(trend_label)}</span>
+                <strong>{escape(kpis.top_comuna)}</strong>
+                <small>comuna con mayor concentración</small>
+            </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def _render_kpi_strip(accidents: pd.DataFrame) -> None:
     kpis = build_kpis(accidents)
     delta = _format_delta(kpis.weekly_trend_delta)
     cards = [
-        ("Total accidentes", f"{kpis.total_accidents:,}", "Registros filtrados"),
-        ("Comuna crítica", kpis.top_comuna, "Mayor concentración"),
-        ("Hora crítica", kpis.critical_hour, "Pico observado"),
-        ("Tendencia semanal", kpis.weekly_trend, delta),
+        ("Total accidentes", f"{kpis.total_accidents:,}", "Registros filtrados", "primary"),
+        ("Comuna crítica", kpis.top_comuna, "Mayor concentración", "neutral"),
+        ("Hora crítica", kpis.critical_hour, "Pico observado", "neutral"),
+        (
+            "Tendencia semanal",
+            _trend_copy(kpis.weekly_trend),
+            delta,
+            _trend_class(kpis.weekly_trend),
+        ),
     ]
     card_html = "".join(
         (
-            '<article class="kpi-card">'
-            f"<span>{label}</span>"
-            f"<strong>{value}</strong>"
-            f"<small>{caption}</small>"
+            f'<article class="kpi-card kpi-card-{variant}">'
+            f"<span>{escape(label)}</span>"
+            f"<strong>{escape(value)}</strong>"
+            f"<small>{escape(caption)}</small>"
             "</article>"
         )
-        for label, value, caption in cards
+        for label, value, caption, variant in cards
     )
     st.markdown(
         f'<section class="kpi-strip">{card_html}</section>',
@@ -242,10 +309,10 @@ def _render_operations_view(
     show_heatmap: bool,
     show_comuna_zones: bool,
 ) -> None:
-    map_col, insight_col = st.columns((2.35, 1), gap="large")
+    map_col, insight_col = st.columns((1.45, 1), gap="large")
     with map_col:
         st.markdown(
-            '<h2 class="section-title">Mapa operativo</h2>',
+            '<div class="panel-heading"><h2>Mapa operativo</h2><span>Evidencia geográfica filtrada</span></div>',
             unsafe_allow_html=True,
         )
         if len(accidents) > 1500:
@@ -268,7 +335,7 @@ def _render_operations_view(
 def _render_insight_panel(accidents: pd.DataFrame) -> None:
     insights = build_insights(accidents)
     st.markdown(
-        '<h2 class="section-title">Lectura rápida</h2>',
+        '<div class="panel-heading"><h2>Lectura rápida</h2><span>Señales operativas</span></div>',
         unsafe_allow_html=True,
     )
     if not insights:
@@ -297,24 +364,27 @@ def _render_risk_rankings(accidents: pd.DataFrame) -> None:
             labels={"accidentes": "Accidentes", "comuna": "Comuna"},
         )
         _style_bar_figure(fig, height=240)
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
     st.markdown('<h3 class="panel-title">Franja horaria</h3>', unsafe_allow_html=True)
     by_band = aggregate_by_time_band(accidents)
-    fig = px.bar(
-        by_band,
-        x="franja_horaria",
-        y="accidentes",
-        text="accidentes",
-        labels={"accidentes": "Accidentes", "franja_horaria": ""},
-    )
-    _style_bar_figure(fig, height=220)
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+    if by_band.empty:
+        st.info("Sin franjas horarias para mostrar.")
+    else:
+        fig = px.bar(
+            by_band,
+            x="franja_horaria",
+            y="accidentes",
+            text="accidentes",
+            labels={"accidentes": "Accidentes", "franja_horaria": ""},
+        )
+        _style_bar_figure(fig, height=220)
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 
 def _render_temporal_story(accidents: pd.DataFrame) -> None:
     st.markdown(
-        '<h2 class="section-title">Patrones temporales</h2>',
+        '<div class="panel-heading temporal-heading"><h2>Patrones temporales</h2><span>Distribución diaria y horaria</span></div>',
         unsafe_allow_html=True,
     )
     hourly = aggregate_by_hour(accidents)
@@ -344,25 +414,17 @@ def _render_temporal_story(accidents: pd.DataFrame) -> None:
         max_daily = max(int(daily["accidentes"].max()), 1) if not daily.empty else 1
         fig.update_layout(
             height=260,
-            margin={"l": 8, "r": 8, "t": 8, "b": 2},
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font={"color": "#d8dee9", "size": 12},
             yaxis_title="Accidentes",
             xaxis_title="Día",
-            showlegend=False,
         )
+        _apply_plot_theme(fig)
         fig.update_xaxes(
-            gridcolor="rgba(148, 163, 184, 0.16)",
             tickformat="%d/%m",
             ticklabelmode="period",
             nticks=min(len(daily), 6) if not daily.empty else 3,
-            zeroline=False,
         )
         fig.update_yaxes(
-            gridcolor="rgba(148, 163, 184, 0.16)",
             range=[0, max_daily * 1.18],
-            zeroline=False,
         )
         st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
         _render_chart_note(summary.daily_insight, "daily-insight")
@@ -626,6 +688,12 @@ def _render_empty_state(title: str, actions: list[str]) -> None:
     )
 
 
+def _empty_primary_insight(accidents: pd.DataFrame) -> str:
+    if accidents.empty:
+        return "No hay registros para interpretar con los filtros actuales."
+    return "Los registros filtrados no muestran una concentración dominante."
+
+
 def _hourly_insight(hourly: pd.DataFrame, total: int) -> str:
     if total == 0 or hourly.empty:
         return "No hay datos suficientes para identificar una concentración horaria."
@@ -698,16 +766,41 @@ def _style_bar_figure(fig: go.Figure, height: int, color: str = "#7dd3fc") -> No
         textposition="outside",
         cliponaxis=False,
     )
+    _apply_plot_theme(fig, height=height)
+
+
+def _apply_plot_theme(fig: go.Figure, height: int | None = None) -> None:
+    layout: dict[str, object] = {
+        "margin": {"l": 8, "r": 8, "t": 12, "b": 8},
+        "paper_bgcolor": "rgba(0,0,0,0)",
+        "plot_bgcolor": "rgba(0,0,0,0)",
+        "font": {"color": "#d7dee8", "size": 12, "family": "Outfit, sans-serif"},
+        "showlegend": False,
+    }
+    if height is not None:
+        layout["height"] = height
     fig.update_layout(
-        height=height,
-        margin={"l": 8, "r": 8, "t": 12, "b": 8},
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font={"color": "#d8dee9", "size": 12},
-        showlegend=False,
+        **layout,
+        hoverlabel={
+            "bgcolor": "#121923",
+            "bordercolor": "rgba(166, 179, 199, 0.28)",
+            "font": {"color": "#f7f9fc", "family": "Outfit, sans-serif"},
+        },
     )
-    fig.update_xaxes(gridcolor="rgba(148, 163, 184, 0.16)", zeroline=False)
-    fig.update_yaxes(gridcolor="rgba(148, 163, 184, 0.10)", zeroline=False)
+    fig.update_xaxes(
+        gridcolor="rgba(166, 179, 199, 0.14)",
+        linecolor="rgba(166, 179, 199, 0.18)",
+        tickfont={"color": "#a6b3c7", "size": 11},
+        title_font={"color": "#c8d2df", "size": 12},
+        zeroline=False,
+    )
+    fig.update_yaxes(
+        gridcolor="rgba(166, 179, 199, 0.10)",
+        linecolor="rgba(166, 179, 199, 0.18)",
+        tickfont={"color": "#a6b3c7", "size": 11},
+        title_font={"color": "#c8d2df", "size": 12},
+        zeroline=False,
+    )
 
 
 def _style_line_figure(fig: go.Figure, height: int) -> None:
@@ -715,22 +808,27 @@ def _style_line_figure(fig: go.Figure, height: int) -> None:
         line={"color": "#ef4444", "width": 3},
         marker={"color": "#f87171", "size": 7},
     )
-    fig.update_layout(
-        height=height,
-        margin={"l": 8, "r": 8, "t": 12, "b": 8},
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font={"color": "#d8dee9", "size": 12},
-        showlegend=False,
-    )
-    fig.update_xaxes(gridcolor="rgba(148, 163, 184, 0.16)", zeroline=False)
-    fig.update_yaxes(gridcolor="rgba(148, 163, 184, 0.10)", zeroline=False)
+    _apply_plot_theme(fig, height=height)
 
 
 def _format_delta(delta: float) -> str:
     if delta == 0:
-        return "0% vs. periodo previo"
+        return "Sin cambio vs. periodo previo"
     return f"{delta:+.0f}% vs. periodo previo"
+
+
+def _trend_copy(trend: str) -> str:
+    if trend == "Sin tendencia":
+        return "Estable sin señal clara"
+    return trend
+
+
+def _trend_class(trend: str) -> str:
+    if trend == "Al alza":
+        return "risk"
+    if trend == "A la baja":
+        return "success"
+    return "neutral"
 
 
 def _sorted_unique(data: pd.DataFrame, column: str) -> list[str]:
@@ -744,18 +842,29 @@ def _inject_dashboard_css() -> None:
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
 
         :root {
-            --bg: #0b0f14;
-            --panel: #111820;
-            --panel-soft: #151d27;
-            --line: rgba(148, 163, 184, 0.18);
-            --text: #f8fafc;
-            --muted: #94a3b8;
-            --accent: #f59e0b;
-            --risk: #ef4444;
-            --data: #7dd3fc;
+            --bg: #0b1017;
+            --surface: #111821;
+            --surface-2: #17212c;
+            --surface-3: #1d2936;
+            --line: rgba(166, 179, 199, 0.24);
+            --line-strong: rgba(214, 224, 238, 0.34);
+            --text: #f7f9fc;
+            --text-soft: #d7dee8;
+            --muted: #a6b3c7;
+            --accent: #d88a22;
+            --accent-soft: rgba(216, 138, 34, 0.16);
+            --risk: #f06464;
+            --success: #4ade80;
+            --data: #6ec6e8;
+            --focus: #f1b35c;
         }
 
-        .stApp, .stApp label, .stApp p, .stApp h1, .stApp h2, .stApp h3 {
+        .stApp,
+        .stApp label,
+        .stApp p,
+        .stApp h1,
+        .stApp h2,
+        .stApp h3 {
             font-family: 'Outfit', sans-serif !important;
         }
 
@@ -765,40 +874,36 @@ def _inject_dashboard_css() -> None:
         }
 
         [data-testid="stAppViewContainer"] > .main .block-container {
-            max-width: 1480px;
-            padding: 2rem 2.2rem 3rem;
+            max-width: 1440px;
+            padding: 1.25rem 2rem 3rem;
         }
 
         [data-testid="stSidebar"] {
-            background: #171b24;
+            background: #111821;
             border-right: 1px solid var(--line);
         }
 
         [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
-            padding: 0.7rem;
-            min-height: 5.5rem;
+            background: var(--surface-2);
             border: 1px solid var(--line);
-            background: #0f141b;
+            min-height: 5rem;
+            padding: 0.8rem;
         }
 
         [data-testid="stSidebar"] label,
         [data-testid="stSidebar"] p {
-            font-size: 0.82rem;
-        }
-
-        [data-baseweb="tag"] {
-            background: rgba(245, 158, 11, 0.16) !important;
-            color: #ffedd5 !important;
-            border-radius: 6px !important;
-            min-height: 1.45rem !important;
+            color: var(--text-soft);
+            font-size: 0.88rem;
         }
 
         .app-header {
-            display: flex;
             align-items: flex-end;
-            justify-content: space-between;
+            border-bottom: 1px solid var(--line);
+            display: flex;
             gap: 1rem;
-            margin-bottom: 1rem;
+            justify-content: space-between;
+            margin-bottom: 0.9rem;
+            padding-bottom: 0.85rem;
         }
 
         .eyebrow {
@@ -806,49 +911,201 @@ def _inject_dashboard_css() -> None:
             font-size: 0.76rem;
             font-weight: 700;
             letter-spacing: 0;
-            margin: 0 0 0.2rem;
+            margin: 0 0 0.22rem;
             text-transform: uppercase;
         }
 
         .app-header h1 {
             color: var(--text);
-            font-size: 1.95rem;
-            line-height: 1.1;
+            font-size: 1.82rem;
+            line-height: 1.12;
             margin: 0;
         }
 
         .date-range {
+            color: var(--text-soft);
+            font-size: 0.94rem;
+            padding-bottom: 0.12rem;
+            white-space: nowrap;
+        }
+
+        .filter-heading {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-bottom: 0;
+            border-radius: 8px 8px 0 0;
             color: var(--muted);
-            font-size: 0.9rem;
-            padding-bottom: 0.22rem;
+            font-size: 0.78rem;
+            font-weight: 700;
+            margin-top: 0.3rem;
+            padding: 0.72rem 0.9rem 0.4rem;
+            text-transform: uppercase;
+        }
+
+        div[data-testid="stHorizontalBlock"]:has([data-testid="stMultiSelect"]) {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 0 0 8px 8px;
+            margin-bottom: 0;
+            padding: 0.1rem 0.85rem 0.75rem;
+        }
+
+        .filter-layer-heading {
+            background: var(--surface);
+            border-left: 1px solid var(--line);
+            border-right: 1px solid var(--line);
+            color: var(--muted);
+            font-size: 0.74rem;
+            font-weight: 700;
+            margin: 0;
+            padding: 0 0.9rem 0.25rem;
+            text-transform: uppercase;
+        }
+
+        div[data-testid="stHorizontalBlock"]:has([data-testid="stToggle"]) {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-top: 0;
+            border-radius: 0 0 8px 8px;
+            margin-bottom: 0.9rem;
+            padding: 0 0.85rem 0.68rem;
+        }
+
+        .stMultiSelect label,
+        .stDateInput label,
+        .stCheckbox label,
+        [data-testid="stBaseButton-secondary"] {
+            color: var(--text-soft) !important;
+            font-size: 0.82rem !important;
+            font-weight: 600 !important;
+        }
+
+        [data-baseweb="select"] > div,
+        [data-baseweb="input"] > div,
+        [data-testid="stDateInput"] input {
+            background: #0d141d !important;
+            border: 1px solid var(--line) !important;
+            border-radius: 7px !important;
+            color: var(--text) !important;
+            min-height: 2.5rem !important;
+        }
+
+        [data-baseweb="select"] > div:hover,
+        [data-baseweb="input"] > div:hover,
+        [data-testid="stDateInput"] input:hover {
+            border-color: var(--line-strong) !important;
+        }
+
+        [data-baseweb="select"] > div:focus-within,
+        [data-baseweb="input"] > div:focus-within,
+        [data-testid="stDateInput"] input:focus {
+            border-color: var(--focus) !important;
+            box-shadow: 0 0 0 2px rgba(241, 179, 92, 0.16) !important;
+        }
+
+        [data-baseweb="tag"] {
+            background: rgba(110, 198, 232, 0.14) !important;
+            border: 1px solid rgba(110, 198, 232, 0.24) !important;
+            border-radius: 6px !important;
+            color: #dff5ff !important;
+            min-height: 1.55rem !important;
+        }
+
+        [data-testid="stToggle"] {
+            padding-top: 0;
+        }
+
+        [data-testid="stToggle"] label {
+            min-height: 2.25rem;
+        }
+
+        .hero-insight {
+            align-items: stretch;
+            background: linear-gradient(135deg, #121b25, #17212c);
+            border: 1px solid var(--line-strong);
+            border-left: 4px solid var(--accent);
+            border-radius: 8px;
+            display: flex;
+            gap: 1rem;
+            justify-content: space-between;
+            margin: 0.15rem 0 0.8rem;
+            padding: 1rem 1.1rem;
+        }
+
+        .hero-kicker {
+            color: var(--accent);
+            font-size: 0.76rem;
+            font-weight: 700;
+            letter-spacing: 0;
+            margin: 0 0 0.25rem;
+            text-transform: uppercase;
+        }
+
+        .hero-insight h2 {
+            color: var(--text);
+            font-size: 1.42rem !important;
+            line-height: 1.24;
+            margin: 0;
+        }
+
+        .hero-context {
+            align-items: flex-end;
+            display: flex;
+            flex: 0 0 15rem;
+            flex-direction: column;
+            justify-content: center;
+            text-align: right;
+        }
+
+        .hero-context strong {
+            color: var(--text);
+            font-size: 1.8rem;
+            line-height: 1.1;
+            margin-top: 0.4rem;
+        }
+
+        .hero-context small {
+            color: var(--muted);
+            font-size: 0.83rem;
         }
 
         .kpi-strip {
-            position: sticky;
-            top: 0;
-            z-index: 5;
             display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+            grid-template-columns: 1.22fr repeat(3, minmax(0, 1fr));
             gap: 0.75rem;
-            padding: 0.75rem 0;
-            margin-bottom: 0.8rem;
-            background: rgba(11, 15, 20, 0.94);
-            backdrop-filter: blur(12px);
+            margin-bottom: 1rem;
         }
 
         .kpi-card {
-            background: linear-gradient(180deg, var(--panel-soft), var(--panel));
+            background: var(--surface);
             border: 1px solid var(--line);
             border-radius: 8px;
-            padding: 0.78rem 0.9rem;
-            min-height: 5rem;
-            transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.22s, box-shadow 0.22s;
+            min-height: 5.6rem;
+            padding: 0.82rem 0.95rem;
+            transition: border-color 0.18s, background 0.18s, transform 0.18s;
         }
 
         .kpi-card:hover {
-            transform: translateY(-2px);
-            border-color: rgba(245, 158, 11, 0.35);
-            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+            background: var(--surface-2);
+            border-color: var(--line-strong);
+            transform: translateY(-1px);
+        }
+
+        .kpi-card-primary {
+            background: linear-gradient(180deg, #182637, #121b25);
+            border-color: rgba(216, 138, 34, 0.42);
+        }
+
+        .kpi-card-risk {
+            border-left: 3px solid var(--risk);
+        }
+
+        .kpi-card-success {
+            border-left: 3px solid var(--success);
+        }
+
+        .kpi-card-neutral {
+            border-left: 3px solid rgba(166, 179, 199, 0.32);
         }
 
         .kpi-card-fatality {
@@ -876,37 +1133,83 @@ def _inject_dashboard_css() -> None:
         .kpi-card small {
             display: block;
             color: var(--muted);
-            font-size: 0.78rem;
-            white-space: nowrap;
+            font-size: 0.84rem;
             overflow: hidden;
             text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .kpi-card strong {
             display: block;
             color: var(--text);
-            font-size: 1.55rem;
-            line-height: 1.25;
-            margin: 0.2rem 0;
-            white-space: nowrap;
+            font-size: 1.58rem;
+            line-height: 1.18;
+            margin: 0.28rem 0;
             overflow: hidden;
             text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
-        h2.section-title {
+        .kpi-card-primary strong {
+            font-size: 1.85rem;
+        }
+
+        .status-pill {
+            border-radius: 999px;
+            display: inline-flex;
+            font-size: 0.78rem;
+            font-weight: 700;
+            padding: 0.25rem 0.56rem;
+        }
+
+        .status-pill.risk {
+            background: rgba(240, 100, 100, 0.14);
+            color: #fecaca;
+        }
+
+        .status-pill.success {
+            background: rgba(74, 222, 128, 0.12);
+            color: #bbf7d0;
+        }
+
+        .status-pill.neutral {
+            background: rgba(166, 179, 199, 0.14);
+            color: var(--text-soft);
+        }
+
+        .panel-heading {
+            align-items: flex-end;
+            display: flex;
+            justify-content: space-between;
+            gap: 0.75rem;
+            margin: 0.35rem 0 0.55rem;
+        }
+
+        .panel-heading h2 {
             color: var(--text);
-            font-size: 1.45rem !important;
+            font-size: 1.22rem !important;
             line-height: 1.2;
-            margin: 0.3rem 0 0.7rem;
-            padding: 0;
+            margin: 0;
+        }
+
+        .panel-heading span {
+            color: var(--muted);
+            font-size: 0.83rem;
+            text-align: right;
         }
 
         h3.panel-title {
             color: var(--text);
             font-size: 1.05rem !important;
             line-height: 1.2;
-            margin: 0.65rem 0 0.1rem;
+            margin: 0.75rem 0 0.2rem;
             padding: 0;
+        }
+
+        iframe[title="streamlit_folium.st_folium"] {
+            border: 1px solid var(--line) !important;
+            border-radius: 8px;
+            overflow: hidden;
         }
 
         .temporal-kpi-strip {
@@ -917,18 +1220,18 @@ def _inject_dashboard_css() -> None:
         }
 
         .temporal-kpi {
-            background: #0f1720;
+            background: var(--surface);
             border: 1px solid var(--line);
             border-radius: 8px;
             min-height: 4.2rem;
-            padding: 0.62rem 0.75rem;
+            padding: 0.72rem 0.82rem;
         }
 
         .temporal-kpi span,
         .temporal-kpi small {
             display: block;
             color: var(--muted);
-            font-size: 0.74rem;
+            font-size: 0.8rem;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -937,7 +1240,7 @@ def _inject_dashboard_css() -> None:
         .temporal-kpi strong {
             display: block;
             color: var(--text);
-            font-size: 1.12rem;
+            font-size: 1.16rem;
             line-height: 1.2;
             margin: 0.16rem 0;
             overflow: hidden;
@@ -946,14 +1249,14 @@ def _inject_dashboard_css() -> None:
         }
 
         .chart-note {
-            background: rgba(15, 23, 32, 0.94);
-            border: 1px solid rgba(148, 163, 184, 0.22);
+            background: var(--surface);
+            border: 1px solid var(--line);
             border-left: 3px solid var(--accent);
             border-radius: 8px;
-            color: #e2e8f0;
-            font-size: 0.84rem;
+            color: var(--text-soft);
+            font-size: 0.88rem;
             line-height: 1.35;
-            margin: -0.15rem 0 0.65rem;
+            margin: -0.05rem 0 0.7rem;
             padding: 0.62rem 0.72rem;
         }
 
@@ -965,10 +1268,10 @@ def _inject_dashboard_css() -> None:
             display: flex;
             gap: 0.85rem;
             align-items: flex-start;
-            background: #101923;
-            border: 1px solid rgba(148, 163, 184, 0.24);
+            background: var(--surface);
+            border: 1px solid var(--line);
             border-radius: 8px;
-            color: #e5e7eb;
+            color: var(--text-soft);
             margin: 0.75rem 0 0.15rem;
             padding: 0.9rem 1rem;
         }
@@ -993,13 +1296,13 @@ def _inject_dashboard_css() -> None:
 
         .empty-state p {
             color: var(--muted);
-            font-size: 0.84rem;
+            font-size: 0.88rem;
             margin: 0 0 0.35rem;
         }
 
         .empty-state ul {
-            color: #cbd5e1;
-            font-size: 0.82rem;
+            color: var(--text-soft);
+            font-size: 0.86rem;
             margin: 0;
             padding-left: 1rem;
         }
@@ -1009,28 +1312,28 @@ def _inject_dashboard_css() -> None:
         }
 
         .insight-item {
-            background: var(--panel);
+            background: var(--surface);
             border: 1px solid var(--line);
-            border-left: 3px solid var(--accent);
+            border-left: 3px solid var(--data);
             border-radius: 8px;
-            color: #e5e7eb;
-            font-size: 0.9rem;
+            color: var(--text-soft);
+            font-size: 0.94rem;
             line-height: 1.38;
             margin-bottom: 0.65rem;
-            padding: 0.78rem 0.85rem;
+            padding: 0.82rem 0.9rem;
         }
 
         div[data-testid="stExpander"] {
             border: 1px solid var(--line);
             border-radius: 8px;
-            background: var(--panel);
+            background: var(--surface);
         }
 
         .stButton button,
         .stDownloadButton button {
             background: var(--accent);
             border: 0;
-            color: #111827;
+            color: #10151c;
             border-radius: 7px;
             font-weight: 700;
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1040,7 +1343,28 @@ def _inject_dashboard_css() -> None:
         .stDownloadButton button:hover {
             opacity: 0.9;
             transform: scale(1.02);
-            box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25);
+            box-shadow: 0 4px 12px rgba(216, 138, 34, 0.24);
+        }
+
+        @media (max-width: 1100px) {
+            div[data-testid="stHorizontalBlock"]:has([data-testid="stMultiSelect"]) {
+                padding-bottom: 0.4rem;
+            }
+
+            .hero-insight {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .hero-context {
+                align-items: flex-start;
+                flex: 0 0 auto;
+                text-align: left;
+            }
+
+            .kpi-strip {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
         }
 
         @media (max-width: 900px) {
@@ -1053,16 +1377,27 @@ def _inject_dashboard_css() -> None:
                 flex-direction: column;
             }
 
-            .kpi-strip {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-            }
-
             .temporal-kpi-strip {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
 
             .empty-state {
                 flex-direction: column;
+            }
+        }
+
+        @media (max-width: 680px) {
+            .app-header h1 {
+                font-size: 1.5rem;
+            }
+
+            .hero-insight h2 {
+                font-size: 1.16rem !important;
+            }
+
+            .kpi-strip,
+            .temporal-kpi-strip {
+                grid-template-columns: 1fr;
             }
         }
         </style>

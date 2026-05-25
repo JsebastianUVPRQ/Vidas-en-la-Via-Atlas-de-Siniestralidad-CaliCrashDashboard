@@ -5,12 +5,13 @@ import json
 import math
 import re
 from collections.abc import Iterable
+from html import escape
 from pathlib import Path
 from typing import Any
-from html import escape
 
 import folium
 import pandas as pd
+from branca.element import Element
 from folium.plugins import HeatMap
 from folium.plugins import MarkerCluster
 
@@ -56,12 +57,13 @@ def build_accident_map(
         tiles="CartoDB dark_matter",
         control_scale=True,
     )
+    _add_map_theme(crash_map)
 
     if show_comuna_zones:
         _add_comuna_zoning(crash_map, accidents, comunas_geojson_path)
 
     if accidents.empty:
-        folium.LayerControl(collapsed=False).add_to(crash_map)
+        folium.LayerControl(collapsed=True).add_to(crash_map)
         return crash_map
 
     if show_heatmap:
@@ -69,19 +71,20 @@ def build_accident_map(
         HeatMap(
             heat_points,
             name="Densidad",
-            radius=20,
-            blur=18,
-            min_opacity=0.18,
+            radius=24,
+            blur=20,
+            min_opacity=0.28,
             gradient={
-                0.20: "#38bdf8",
-                0.45: "#22c55e",
-                0.70: "#f59e0b",
-                1.00: "#ef4444",
+                0.18: "#6ec6e8",
+                0.42: "#4ade80",
+                0.68: "#d88a22",
+                0.86: "#f97316",
+                1.00: "#f06464",
             },
         ).add_to(crash_map)
 
     marker_cluster = MarkerCluster(name="Accidentes").add_to(crash_map)
-    
+
     # Sample markers if dataset is large to prevent browser freeze/crash
     marker_data = accidents
     if len(accidents) > 1500:
@@ -101,17 +104,92 @@ def build_accident_map(
         )
         folium.CircleMarker(
             location=(float(accident.latitud), float(accident.longitud)),
-            radius=4,
-            color="#0f172a",
-            weight=1,
+            radius=4.5,
+            color="#0b1017",
+            weight=1.2,
             fill=True,
-            fill_color="#f59e0b",
-            fill_opacity=0.84,
+            fill_color="#f1b35c",
+            fill_opacity=0.9,
             popup=popup,
         ).add_to(marker_cluster)
 
-    folium.LayerControl(collapsed=False).add_to(crash_map)
+    folium.LayerControl(collapsed=True).add_to(crash_map)
     return crash_map
+
+
+def _add_map_theme(crash_map: folium.Map) -> None:
+    """Attach dashboard-aligned styles to Leaflet controls and popups."""
+    crash_map.get_root().header.add_child(
+        Element(
+            """
+            <style>
+            .leaflet-container {
+                background: #0b1017;
+                color: #f7f9fc;
+                font-family: Inter, Segoe UI, sans-serif;
+            }
+
+            .leaflet-control-layers,
+            .leaflet-bar a,
+            .leaflet-control-scale-line {
+                background: rgba(17, 24, 33, 0.94) !important;
+                border: 1px solid rgba(166, 179, 199, 0.28) !important;
+                color: #f7f9fc !important;
+                box-shadow: 0 8px 22px rgba(0, 0, 0, 0.36) !important;
+            }
+
+            .leaflet-bar a {
+                height: 32px !important;
+                line-height: 30px !important;
+                width: 32px !important;
+            }
+
+            .leaflet-control-layers {
+                border-radius: 8px !important;
+                padding: 0.35rem 0.45rem !important;
+            }
+
+            .leaflet-control-layers-expanded {
+                min-width: 12rem;
+            }
+
+            .leaflet-control-layers label {
+                color: #d7dee8;
+                font-size: 12px;
+                margin: 0.24rem 0;
+            }
+
+            .leaflet-control-layers-selector {
+                accent-color: #d88a22;
+                height: 14px;
+                width: 14px;
+            }
+
+            .leaflet-popup-content-wrapper,
+            .leaflet-popup-tip {
+                background: #111821;
+                border: 1px solid rgba(166, 179, 199, 0.26);
+                color: #f7f9fc;
+                box-shadow: 0 14px 30px rgba(0, 0, 0, 0.42);
+            }
+
+            .leaflet-popup-content {
+                margin: 0;
+            }
+
+            .leaflet-tooltip {
+                background: #111821;
+                border: 1px solid rgba(166, 179, 199, 0.32);
+                border-radius: 7px;
+                box-shadow: 0 8px 20px rgba(0, 0, 0, 0.34);
+                color: #f7f9fc;
+                font-size: 12px;
+                padding: 0.42rem 0.55rem;
+            }
+            </style>
+            """
+        )
+    )
 
 
 def _add_comuna_zoning(
@@ -156,14 +234,14 @@ def _add_comuna_geojson_layer(
         name="Zonificación comunas",
         style_function=lambda feature: {
             "fillColor": feature["properties"].get("_fill_color", "#94a3b8"),
-            "color": "#e2e8f0",
+            "color": "#d7dee8",
             "weight": 1.25,
-            "fillOpacity": 0.22,
+            "fillOpacity": 0.26,
         },
         highlight_function=lambda _: {
             "color": "#ffffff",
             "weight": 2.5,
-            "fillOpacity": 0.38,
+            "fillOpacity": 0.42,
         },
         tooltip=folium.GeoJsonTooltip(
             fields=["COMUNA", "NOMBRE", "ACCIDENTES"],
@@ -264,7 +342,7 @@ def _add_comuna_reference_layer(
             weight=1.4,
             fill=True,
             fill_color=color,
-            fill_opacity=0.32,
+            fill_opacity=0.38,
             tooltip=tooltip,
         ).add_to(zone_group)
         folium.Marker(
@@ -370,15 +448,17 @@ def _popup_html(
     safe_gravedad = escape(gravedad)
 
     return f"""
-    <div style="font-family: Inter, Segoe UI, sans-serif; min-width: 190px;">
-        <div style="font-weight: 700; font-size: 14px; margin-bottom: 6px;">
+    <div style="font-family: Inter, Segoe UI, sans-serif; min-width: 210px; padding: 10px 12px;">
+        <div style="color: #f7f9fc; font-weight: 700; font-size: 14px; margin-bottom: 6px;">
             {safe_tipo}
         </div>
-        <div style="color: #475569; font-size: 12px; margin-bottom: 6px;">
-            {safe_fecha} · {safe_hora}
+        <div style="color: #a6b3c7; font-size: 12px; margin-bottom: 8px;">
+            {safe_fecha} | {safe_hora}
         </div>
-        <div style="font-size: 12px;">Comuna <strong>{safe_comuna}</strong></div>
-        <div style="font-size: 12px;">Barrio: {safe_barrio}</div>
-        <div style="font-size: 12px;">Gravedad: {safe_gravedad}</div>
+        <div style="color: #d7dee8; font-size: 12px; line-height: 1.45;">
+            <div>Comuna <strong style="color: #f1b35c;">{safe_comuna}</strong></div>
+            <div>Barrio: {safe_barrio}</div>
+            <div>Gravedad: {safe_gravedad}</div>
+        </div>
     </div>
     """
