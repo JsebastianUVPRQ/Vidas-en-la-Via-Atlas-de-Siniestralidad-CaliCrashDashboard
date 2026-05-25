@@ -24,16 +24,20 @@ class DashboardKpis:
 def filter_accidents(
     accidents: pd.DataFrame,
     comunas: list[str] | None = None,
+    direcciones: list[str] | None = None,
     franjas_horarias: list[str] | None = None,
     tipos_accidente: list[str] | None = None,
     gravedades: list[str] | None = None,
     date_range: tuple[date, date] | list[date] | None = None,
 ) -> pd.DataFrame:
-    """Filter accidents by commune, time band, type, severity, and date."""
+    """Filter accidents by commune, address, time band, type, severity, and date."""
     filtered = accidents
 
     if comunas:
         filtered = filtered[filtered["comuna"].astype(str).isin(comunas)]
+
+    if direcciones:
+        filtered = filtered[filtered["interseccion"].astype(str).isin(direcciones)]
 
     if franjas_horarias:
         filtered = filtered[filtered["franja_horaria"].isin(franjas_horarias)]
@@ -92,6 +96,11 @@ def aggregate_by_comuna(accidents: pd.DataFrame) -> pd.DataFrame:
     return _count_by(accidents, "comuna")
 
 
+def aggregate_by_intersection(accidents: pd.DataFrame) -> pd.DataFrame:
+    """Count accidents by reported intersection/address in descending order."""
+    return _count_by(accidents, "interseccion")
+
+
 def aggregate_by_time_band(accidents: pd.DataFrame) -> pd.DataFrame:
     """Count accidents by time band using a human-readable order."""
     return _aggregate_sorted(accidents, "franja_horaria", TIME_BAND_ORDER)
@@ -131,17 +140,11 @@ def _aggregate_sorted(
 
 
 def _count_by(accidents: pd.DataFrame, column: str) -> pd.DataFrame:
-    if accidents.empty:
+    if accidents.empty or column not in accidents.columns:
         return pd.DataFrame(columns=[column, "accidentes"])
 
-    values = accidents[column].dropna().astype(str).str.strip()
-    known = accidents[
-        values.ne("")
-        & values.str.lower().ne("sin dato")
-        & values.str.lower().ne("nan")
-        & values.str.lower().ne("none")
-        & values.ne(".")
-    ]
+    values = accidents[column].astype("string").str.strip()
+    known = accidents[_known_value_mask(values)]
     if known.empty:
         return pd.DataFrame(columns=[column, "accidentes"])
 
@@ -159,16 +162,22 @@ def _top_value(accidents: pd.DataFrame, column: str) -> str:
         return "Sin datos"
 
     values = accidents[column].dropna().astype(str).str.strip()
-    values = values[
-        values.ne("")
-        & values.str.lower().ne("sin dato")
-        & values.str.lower().ne("nan")
-        & values.str.lower().ne("none")
-        & values.ne(".")
-    ]
+    values = values[_known_value_mask(values)]
     if values.empty:
         return "Sin datos"
     return str(values.value_counts().idxmax())
+
+
+def _known_value_mask(values: pd.Series) -> pd.Series:
+    lowered = values.str.lower()
+    return (
+        values.notna()
+        & values.ne("")
+        & lowered.ne("sin dato")
+        & lowered.ne("nan")
+        & lowered.ne("none")
+        & values.ne(".")
+    )
 
 
 def _critical_hour(accidents: pd.DataFrame) -> str:

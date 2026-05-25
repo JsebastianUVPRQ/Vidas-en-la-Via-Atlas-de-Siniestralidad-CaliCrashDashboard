@@ -1,6 +1,7 @@
 import pandas as pd
 
 from src.metrics import (
+    aggregate_by_intersection,
     aggregate_by_hour,
     aggregate_by_comuna,
     aggregate_by_weekday,
@@ -77,6 +78,39 @@ def test_build_kpis_ignores_unknown_comuna() -> None:
     result = build_kpis(accidents)
 
     assert result.top_comuna == "17"
+
+
+def test_build_kpis_uses_intersection_when_comuna_is_unknown() -> None:
+    accidents = _sample_accidents()
+    accidents["comuna"] = ["Sin dato", "Sin dato", "Sin dato"]
+    accidents["interseccion"] = ["Calle 5 con Carrera 10", "Calle 5 con Carrera 10", "Calle 8"]
+
+    result = build_kpis(accidents)
+
+    assert result.top_comuna == "Sin datos"
+    assert result.top_intersection == "Calle 5 con Carrera 10"
+
+
+def test_aggregate_by_intersection_counts_descending() -> None:
+    accidents = _sample_accidents()
+    accidents["interseccion"] = ["Calle 5", "Calle 5", "Calle 8"]
+
+    result = aggregate_by_intersection(accidents)
+
+    assert result.to_dict("records") == [
+        {"interseccion": "Calle 5", "accidentes": 2},
+        {"interseccion": "Calle 8", "accidentes": 1},
+    ]
+
+
+def test_filter_accidents_by_intersection() -> None:
+    accidents = _sample_accidents()
+    accidents["interseccion"] = ["Calle 5", "Calle 8", "Calle 5"]
+
+    result = filter_accidents(accidents, direcciones=["Calle 5"])
+
+    assert len(result) == 2
+    assert set(result["interseccion"]) == {"Calle 5"}
 
 
 def test_aggregate_by_weekday_uses_calendar_order() -> None:

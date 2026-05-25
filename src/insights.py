@@ -19,13 +19,26 @@ def build_insights(accidents: pd.DataFrame) -> list[str]:
 def _dominant_comuna(accidents: pd.DataFrame) -> str:
     counts = _known_value_counts(accidents, "comuna")
     if counts.empty:
-        return "No hay comuna válida en los datos cargados para distribuir el riesgo territorial."
+        return _dominant_intersection(accidents)
 
     comuna = counts.idxmax()
     percentage = counts.max() / counts.sum() * 100
     return (
         f"La comuna {comuna} concentra "
         f"{percentage:.0f}% de los accidentes con comuna registrada."
+    )
+
+
+def _dominant_intersection(accidents: pd.DataFrame) -> str:
+    counts = _known_value_counts(accidents, "interseccion")
+    if counts.empty:
+        return "No hay dirección válida en los datos cargados para distribuir el riesgo territorial."
+
+    intersection = counts.idxmax()
+    percentage = counts.max() / counts.sum() * 100
+    return (
+        f"El punto {intersection} concentra "
+        f"{percentage:.0f}% de los accidentes con dirección registrada."
     )
 
 

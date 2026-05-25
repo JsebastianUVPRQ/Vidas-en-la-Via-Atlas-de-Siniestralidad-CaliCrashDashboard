@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.etl import read_csv_flexible
+
 
 FATALITY_COLUMNS = {
     "Departamento",
@@ -151,7 +153,7 @@ def aggregate_fatalities_by_crash_class(fatalities: pd.DataFrame) -> pd.DataFram
 
 def _read_fatality_files(files: Iterable[Path]) -> pd.DataFrame:
     frames = [
-        pd.read_csv(file, sep=";", encoding="utf-8", low_memory=False)
+        read_csv_flexible(file)
         for file in files
     ]
     if not frames:

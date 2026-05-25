@@ -50,4 +50,19 @@ def test_build_insights_ignores_unknown_comuna_and_time_band() -> None:
 
     assert "La comuna Sin dato concentra 100% de los accidentes filtrados." not in result
     assert "La franja Sin dato domina el riesgo con 100% de los casos." not in result
-    assert "No hay comuna válida en los datos cargados para distribuir el riesgo territorial." in result
+    assert "No hay dirección válida en los datos cargados para distribuir el riesgo territorial." in result
+
+
+def test_build_insights_uses_intersection_when_comuna_is_unknown() -> None:
+    accidents = pd.DataFrame(
+        {
+            "comuna": ["Sin dato", "Sin dato", "Sin dato"],
+            "interseccion": ["Calle 5", "Calle 5", "Calle 8"],
+            "franja_horaria": ["mañana", "mañana", "tarde"],
+            "gravedad": ["Con lesionado", "Con lesionado", "Con lesionado"],
+        }
+    )
+
+    result = build_insights(accidents)
+
+    assert "El punto Calle 5 concentra 67% de los accidentes con dirección registrada." in result

@@ -113,3 +113,21 @@ def test_normalize_accident_data_parses_mixed_date_formats() -> None:
         "2016-01-13",
         "2025-09-27",
     ]
+
+
+def test_normalize_accident_data_coalesces_duplicate_normalized_columns() -> None:
+    raw = pd.DataFrame(
+        {
+            "Fecha": ["1/01/2016"],
+            "Hora": ["10:00"],
+            "Tipo_Confirmado": ["Con lesionado"],
+            "Tipo_Confirmado.1": ["Por Atropello"],
+            "Dirección_Reporte": ["Carrera 94 Con Calle 4 C"],
+        }
+    )
+
+    result = normalize_accident_data(raw)
+
+    assert result.loc[0, "gravedad"] == "Con lesionado"
+    assert result.loc[0, "tipo_accidente"] == "Por Atropello"
+    assert result.loc[0, "interseccion"] == "Carrera 94 Con Calle 4 C"

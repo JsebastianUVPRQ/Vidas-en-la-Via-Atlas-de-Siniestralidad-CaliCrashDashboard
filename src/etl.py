@@ -40,6 +40,7 @@ COLUMN_ALIASES = {
     "clase_accidente": "tipo_accidente",
     "tipo_confirmado_1": "tipo_accidente",
     "tipo_clase_de_accidente": "tipo_accidente",
+    "tipo_clase_de_accidente_1": "tipo_accidente",
     "clase_de_accidente": "tipo_accidente",
     "clase_siniestro": "tipo_accidente",
     "tipo_confirmado": "gravedad",
@@ -288,9 +289,37 @@ def build_sample_accidents() -> pd.DataFrame:
 def _normalize_columns(data: pd.DataFrame) -> pd.DataFrame:
     renamed = data.rename(columns=_normalize_column_name)
     renamed = renamed.rename(columns=COLUMN_ALIASES)
+    renamed = _coalesce_duplicate_columns(renamed)
     for column in REQUIRED_COLUMNS.difference(renamed.columns):
         renamed[column] = pd.NA
     return renamed
+
+
+def _coalesce_duplicate_columns(data: pd.DataFrame) -> pd.DataFrame:
+    """Merge duplicate normalized columns using the first meaningful value."""
+    if not data.columns.duplicated().any():
+        return data
+
+    coalesced = pd.DataFrame(index=data.index)
+    for column in dict.fromkeys(data.columns):
+        same_name = data.loc[:, data.columns == column]
+        if same_name.shape[1] == 1:
+            coalesced[column] = same_name.iloc[:, 0]
+            continue
+
+        result = same_name.iloc[:, 0]
+        for index in range(1, same_name.shape[1]):
+            result = _prefer_known_values(result, same_name.iloc[:, index])
+        coalesced[column] = result
+    return coalesced
+
+
+def _prefer_known_values(left: pd.Series, right: pd.Series) -> pd.Series:
+    left_values = left.astype("string").str.strip()
+    right_values = right.astype("string").str.strip()
+    missing_left = left.isna() | left_values.isin(["", ".", "nan", "None", "none"])
+    known_right = ~(right.isna() | right_values.isin(["", ".", "nan", "None", "none"]))
+    return left.where(~(missing_left & known_right), right)
 
 
 def _parse_and_validate(data: pd.DataFrame) -> pd.DataFrame:

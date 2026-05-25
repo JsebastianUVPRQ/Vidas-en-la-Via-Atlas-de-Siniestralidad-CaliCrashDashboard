@@ -11,7 +11,7 @@ import streamlit as st
 from streamlit_folium import st_folium
 
 from src.config import DATA_CANDIDATES, FATALITY_DATA_DIR, TIME_BAND_ORDER
-from src.etl import build_sample_accidents, load_accident_data, normalize_accident_data
+from src.etl import build_sample_accidents, normalize_accident_data, read_csv_flexible
 from src.fallecidos import (
     aggregate_fatalities_by_crash_class,
     aggregate_fatalities_by_time_range,
@@ -24,6 +24,7 @@ from src.mapa import build_accident_map
 from src.metrics import (
     aggregate_by_comuna,
     aggregate_by_hour,
+    aggregate_by_intersection,
     aggregate_by_time_band,
     build_kpis,
     filter_accidents,
@@ -52,6 +53,7 @@ class DashboardFilters:
     """Selected dashboard filters."""
 
     comunas: list[str]
+    direcciones: list[str]
     franjas_horarias: list[str]
     tipos_accidente: list[str]
     gravedades: list[str]
@@ -98,6 +100,7 @@ def render_dashboard() -> None:
     filtered = filter_accidents(
         accidents,
         comunas=filters.comunas,
+        direcciones=filters.direcciones,
         franjas_horarias=filters.franjas_horarias,
         tipos_accidente=filters.tipos_accidente,
         gravedades=filters.gravedades,
@@ -114,7 +117,7 @@ def render_dashboard() -> None:
 @st.cache_data(show_spinner=False)
 def _load_data_with_raw(uploaded_file: object | None) -> tuple[pd.DataFrame, pd.DataFrame]:
     if uploaded_file is not None:
-        raw = pd.read_csv(uploaded_file)
+        raw = read_csv_flexible(uploaded_file)
         return normalize_accident_data(raw), raw
 
     for path in DATA_CANDIDATES:
@@ -123,7 +126,7 @@ def _load_data_with_raw(uploaded_file: object | None) -> tuple[pd.DataFrame, pd.
             if suffix == ".parquet":
                 raw = pd.read_parquet(path)
             else:
-                raw = pd.read_csv(path)
+                raw = read_csv_flexible(path)
             return normalize_accident_data(raw), raw
 
     sample = build_sample_accidents()
@@ -156,8 +159,20 @@ def _render_filters(accidents: pd.DataFrame) -> DashboardFilters:
     with st.sidebar:
         st.markdown("### Filtros")
 
-        comunas = _sorted_unique(accidents, "comuna")
-        selected_comunas = st.multiselect("Comuna", comunas, default=comunas)
+        comunas = _sorted_known_unique(accidents, "comuna")
+        selected_comunas = (
+            st.multiselect("Comuna", comunas, default=comunas)
+            if comunas
+            else []
+        )
+
+        direcciones = _top_known_values(accidents, "interseccion", limit=250)
+        selected_directions = st.multiselect(
+            "Dirección / punto",
+            direcciones,
+            default=[],
+            help="Dejar vacío para incluir todas las direcciones.",
+        )
 
         available_bands = [
             band
@@ -197,6 +212,7 @@ def _render_filters(accidents: pd.DataFrame) -> DashboardFilters:
 
     return DashboardFilters(
         comunas=selected_comunas,
+        direcciones=selected_directions,
         franjas_horarias=selected_bands,
         tipos_accidente=selected_types,
         gravedades=selected_severities,
@@ -208,9 +224,17 @@ def _render_filters(accidents: pd.DataFrame) -> DashboardFilters:
 def _render_kpi_strip(accidents: pd.DataFrame) -> None:
     kpis = build_kpis(accidents)
     delta = _format_delta(kpis.weekly_trend_delta)
+    territorial_label = "Comuna crítica"
+    territorial_value = kpis.top_comuna
+    territorial_caption = "Mayor concentración"
+    if kpis.top_comuna == "Sin datos" and kpis.top_intersection != "Sin datos":
+        territorial_label = "Punto crítico"
+        territorial_value = kpis.top_intersection
+        territorial_caption = "Dirección con más registros"
+
     cards = [
         ("Total accidentes", f"{kpis.total_accidents:,}", "Registros filtrados"),
-        ("Comuna crítica", kpis.top_comuna, "Mayor concentración"),
+        (territorial_label, territorial_value, territorial_caption),
         ("Hora crítica", kpis.critical_hour, "Pico observado"),
         ("Tendencia semanal", kpis.weekly_trend, delta),
     ]
@@ -237,17 +261,64 @@ def _render_operations_view(accidents: pd.DataFrame, show_heatmap: bool) -> None
             '<h2 class="section-title">Mapa operativo</h2>',
             unsafe_allow_html=True,
         )
-        if len(accidents) > 1500:
+        has_geocoded_points = _has_geocoded_points(accidents)
+        if has_geocoded_points and len(accidents) > 1500:
             st.info(
                 "💡 **Rendimiento:** Se muestra una muestra representativa de 1,500 marcadores individuales para "
                 "evitar ralentizar el navegador, pero el mapa de calor y las estadísticas utilizan el 100% de los datos."
             )
-        accident_map = build_accident_map(accidents, show_heatmap=show_heatmap)
-        st_folium(accident_map, use_container_width=True, height=600, key="mapa_operativo", returned_objects=[])
+        if has_geocoded_points:
+            accident_map = build_accident_map(accidents, show_heatmap=show_heatmap)
+            st_folium(accident_map, use_container_width=True, height=600, key="mapa_operativo", returned_objects=[])
+        else:
+            _render_address_operations_view(accidents)
 
     with insight_col:
         _render_insight_panel(accidents)
         _render_risk_rankings(accidents)
+
+
+def _has_geocoded_points(accidents: pd.DataFrame) -> bool:
+    if accidents.empty or {"latitud", "longitud"}.difference(accidents.columns):
+        return False
+    return bool(accidents[["latitud", "longitud"]].dropna().shape[0])
+
+
+def _render_address_operations_view(accidents: pd.DataFrame) -> None:
+    by_intersection = aggregate_by_intersection(accidents)
+    if by_intersection.empty:
+        _render_empty_state(
+            "No hay puntos georreferenciados ni direcciones válidas para mapear.",
+            [
+                "Cargar un archivo con latitud y longitud para activar el mapa.",
+                "O incluir una columna de dirección para analizar concentración territorial.",
+            ],
+        )
+        return
+
+    st.caption(
+        "La fuente actual no trae coordenadas. Se muestra concentración por dirección reportada."
+    )
+    top_points = by_intersection.head(15)
+    fig = px.bar(
+        top_points.sort_values("accidentes"),
+        x="accidentes",
+        y="interseccion",
+        orientation="h",
+        text="accidentes",
+        labels={"accidentes": "Accidentes", "interseccion": "Dirección"},
+    )
+    _style_bar_figure(fig, height=430)
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+    st.dataframe(
+        by_intersection.head(50),
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "interseccion": st.column_config.TextColumn("Dirección / punto"),
+            "accidentes": st.column_config.NumberColumn("Accidentes", format="%d"),
+        },
+    )
 
 
 def _render_insight_panel(accidents: pd.DataFrame) -> None:
@@ -268,11 +339,25 @@ def _render_insight_panel(accidents: pd.DataFrame) -> None:
 
 
 def _render_risk_rankings(accidents: pd.DataFrame) -> None:
-    st.markdown('<h3 class="panel-title">Top comunas</h3>', unsafe_allow_html=True)
     by_comuna = aggregate_by_comuna(accidents).head(5)
     if by_comuna.empty:
-        st.info("Sin comunas para mostrar.")
+        st.markdown('<h3 class="panel-title">Top direcciones</h3>', unsafe_allow_html=True)
+        by_intersection = aggregate_by_intersection(accidents).head(5)
+        if by_intersection.empty:
+            st.info("Sin direcciones para mostrar.")
+        else:
+            fig = px.bar(
+                by_intersection.sort_values("accidentes"),
+                x="accidentes",
+                y="interseccion",
+                orientation="h",
+                text="accidentes",
+                labels={"accidentes": "Accidentes", "interseccion": "Dirección"},
+            )
+            _style_bar_figure(fig, height=240)
+            st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
     else:
+        st.markdown('<h3 class="panel-title">Top comunas</h3>', unsafe_allow_html=True)
         fig = px.bar(
             by_comuna.sort_values("accidentes"),
             x="accidentes",
@@ -723,6 +808,32 @@ def _format_delta(delta: float) -> str:
 
 def _sorted_unique(data: pd.DataFrame, column: str) -> list[str]:
     return sorted(data[column].dropna().astype(str).unique())
+
+
+def _sorted_known_unique(data: pd.DataFrame, column: str) -> list[str]:
+    if column not in data.columns:
+        return []
+    values = data[column].dropna().astype(str).str.strip()
+    return sorted(values[_known_value_mask(values)].unique())
+
+
+def _top_known_values(data: pd.DataFrame, column: str, limit: int) -> list[str]:
+    if column not in data.columns:
+        return []
+    values = data[column].dropna().astype(str).str.strip()
+    counts = values[_known_value_mask(values)].value_counts()
+    return counts.head(limit).index.tolist()
+
+
+def _known_value_mask(values: pd.Series) -> pd.Series:
+    lowered = values.str.lower()
+    return (
+        values.ne("")
+        & lowered.ne("sin dato")
+        & lowered.ne("nan")
+        & lowered.ne("none")
+        & values.ne(".")
+    )
 
 
 def _inject_dashboard_css() -> None:
