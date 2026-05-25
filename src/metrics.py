@@ -71,7 +71,7 @@ def build_kpis(accidents: pd.DataFrame) -> DashboardKpis:
         )
 
     date_count = accidents["fecha"].dt.date.nunique()
-    top_comuna = aggregate_by_comuna(accidents).iloc[0]["comuna"]
+    top_comuna = _top_value(accidents, "comuna")
     top_intersection = _top_value(accidents, "interseccion")
     critical_hour = _critical_hour(accidents)
     weekly_trend, weekly_trend_delta = _weekly_trend(accidents)
@@ -134,8 +134,19 @@ def _count_by(accidents: pd.DataFrame, column: str) -> pd.DataFrame:
     if accidents.empty:
         return pd.DataFrame(columns=[column, "accidentes"])
 
+    values = accidents[column].dropna().astype(str).str.strip()
+    known = accidents[
+        values.ne("")
+        & values.str.lower().ne("sin dato")
+        & values.str.lower().ne("nan")
+        & values.str.lower().ne("none")
+        & values.ne(".")
+    ]
+    if known.empty:
+        return pd.DataFrame(columns=[column, "accidentes"])
+
     return (
-        accidents.groupby(column, dropna=False, observed=False)
+        known.groupby(column, dropna=False, observed=False)
         .size()
         .reset_index(name="accidentes")
         .sort_values("accidentes", ascending=False)
@@ -147,8 +158,14 @@ def _top_value(accidents: pd.DataFrame, column: str) -> str:
     if column not in accidents.columns:
         return "Sin datos"
 
-    values = accidents[column].dropna().astype(str)
-    values = values[values.ne("Sin dato")]
+    values = accidents[column].dropna().astype(str).str.strip()
+    values = values[
+        values.ne("")
+        & values.str.lower().ne("sin dato")
+        & values.str.lower().ne("nan")
+        & values.str.lower().ne("none")
+        & values.ne(".")
+    ]
     if values.empty:
         return "Sin datos"
     return str(values.value_counts().idxmax())

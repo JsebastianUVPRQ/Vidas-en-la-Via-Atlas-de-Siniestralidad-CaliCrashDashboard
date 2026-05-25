@@ -282,19 +282,22 @@ def _render_risk_rankings(accidents: pd.DataFrame) -> None:
             labels={"accidentes": "Accidentes", "comuna": "Comuna"},
         )
         _style_bar_figure(fig, height=240)
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
     st.markdown('<h3 class="panel-title">Franja horaria</h3>', unsafe_allow_html=True)
     by_band = aggregate_by_time_band(accidents)
-    fig = px.bar(
-        by_band,
-        x="franja_horaria",
-        y="accidentes",
-        text="accidentes",
-        labels={"accidentes": "Accidentes", "franja_horaria": ""},
-    )
-    _style_bar_figure(fig, height=220)
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+    if by_band.empty:
+        st.info("Sin datos de franja horaria para mostrar.")
+    else:
+        fig = px.bar(
+            by_band,
+            x="franja_horaria",
+            y="accidentes",
+            text="accidentes",
+            labels={"accidentes": "Accidentes", "franja_horaria": ""},
+        )
+        _style_bar_figure(fig, height=220)
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 
 def _render_temporal_story(accidents: pd.DataFrame) -> None:

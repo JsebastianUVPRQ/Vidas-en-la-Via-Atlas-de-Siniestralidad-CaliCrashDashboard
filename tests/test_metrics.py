@@ -70,6 +70,15 @@ def test_build_kpis_handles_empty_data() -> None:
     assert result.weekly_trend_delta == 0.0
 
 
+def test_build_kpis_ignores_unknown_comuna() -> None:
+    accidents = _sample_accidents()
+    accidents["comuna"] = ["Sin dato", "Sin dato", "17"]
+
+    result = build_kpis(accidents)
+
+    assert result.top_comuna == "17"
+
+
 def test_aggregate_by_weekday_uses_calendar_order() -> None:
     result = aggregate_by_weekday(_sample_accidents())
 

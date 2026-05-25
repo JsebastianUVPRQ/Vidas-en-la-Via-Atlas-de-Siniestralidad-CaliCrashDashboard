@@ -25,28 +25,35 @@ def build_accident_map(
     if accidents.empty:
         return crash_map
 
+    geocoded_accidents = accidents.dropna(subset=["latitud", "longitud"])
+    if geocoded_accidents.empty:
+        _add_missing_coordinates_notice(crash_map, len(accidents))
+        folium.LayerControl().add_to(crash_map)
+        return crash_map
+
     if show_heatmap:
-        heat_points = accidents[["latitud", "longitud"]].dropna().values.tolist()
-        HeatMap(
-            heat_points,
-            name="Densidad",
-            radius=20,
-            blur=18,
-            min_opacity=0.18,
-            gradient={
-                0.20: "#38bdf8",
-                0.45: "#22c55e",
-                0.70: "#f59e0b",
-                1.00: "#ef4444",
-            },
-        ).add_to(crash_map)
+        heat_points = geocoded_accidents[["latitud", "longitud"]].values.tolist()
+        if heat_points:
+            HeatMap(
+                heat_points,
+                name="Densidad",
+                radius=20,
+                blur=18,
+                min_opacity=0.18,
+                gradient={
+                    0.20: "#38bdf8",
+                    0.45: "#22c55e",
+                    0.70: "#f59e0b",
+                    1.00: "#ef4444",
+                },
+            ).add_to(crash_map)
 
     marker_cluster = MarkerCluster(name="Accidentes").add_to(crash_map)
     
     # Sample markers if dataset is large to prevent browser freeze/crash
-    marker_data = accidents
-    if len(accidents) > 1500:
-        marker_data = accidents.sample(n=1500, random_state=42)
+    marker_data = geocoded_accidents
+    if len(marker_data) > 1500:
+        marker_data = marker_data.sample(n=min(1500, len(marker_data)), random_state=42)
 
     for accident in marker_data.itertuples(index=False):
         popup = folium.Popup(
@@ -73,6 +80,35 @@ def build_accident_map(
 
     folium.LayerControl().add_to(crash_map)
     return crash_map
+
+
+def _add_missing_coordinates_notice(crash_map: folium.Map, total_records: int) -> None:
+    """Show a visible map state when records are not geocoded."""
+    folium.Marker(
+        location=CALI_CENTER,
+        icon=folium.DivIcon(
+            html=f"""
+            <div style="
+                background: rgba(15, 23, 42, 0.94);
+                border: 1px solid rgba(245, 158, 11, 0.55);
+                border-left: 4px solid #f59e0b;
+                border-radius: 8px;
+                color: #f8fafc;
+                font-family: Inter, Segoe UI, sans-serif;
+                line-height: 1.35;
+                padding: 12px 14px;
+                width: 280px;
+                box-shadow: 0 12px 30px rgba(0,0,0,.35);
+            ">
+                <strong>Mapa sin puntos georreferenciados</strong>
+                <div style="color:#cbd5e1; font-size:12px; margin-top:4px;">
+                    Los {total_records:,} registros filtrados no tienen latitud/longitud.
+                    Las métricas se calculan, pero el mapa requiere coordenadas.
+                </div>
+            </div>
+            """,
+        ),
+    ).add_to(crash_map)
 
 
 def _popup_html(

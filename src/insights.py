@@ -17,25 +17,25 @@ def build_insights(accidents: pd.DataFrame) -> list[str]:
 
 
 def _dominant_comuna(accidents: pd.DataFrame) -> str:
-    counts = accidents["comuna"].astype(str).value_counts()
+    counts = _known_value_counts(accidents, "comuna")
     if counts.empty:
-        return ""
+        return "No hay comuna válida en los datos cargados para distribuir el riesgo territorial."
 
     comuna = counts.idxmax()
-    percentage = counts.max() / len(accidents) * 100
+    percentage = counts.max() / counts.sum() * 100
     return (
         f"La comuna {comuna} concentra "
-        f"{percentage:.0f}% de los accidentes filtrados."
+        f"{percentage:.0f}% de los accidentes con comuna registrada."
     )
 
 
 def _dominant_time_band(accidents: pd.DataFrame) -> str:
-    counts = accidents["franja_horaria"].astype(str).value_counts()
+    counts = _known_value_counts(accidents, "franja_horaria")
     if counts.empty:
-        return ""
+        return "No hay horas válidas suficientes para identificar una franja crítica."
 
     band = counts.idxmax()
-    percentage = counts.max() / len(accidents) * 100
+    percentage = counts.max() / counts.sum() * 100
     return f"La franja {band} domina el riesgo con {percentage:.0f}% de los casos."
 
 
@@ -43,16 +43,28 @@ def _dominant_severity(accidents: pd.DataFrame) -> str:
     if "gravedad" not in accidents.columns:
         return ""
 
-    severity_counts = accidents["gravedad"].astype(str).value_counts()
+    severity_counts = _known_value_counts(accidents, "gravedad")
     if severity_counts.empty:
         return ""
 
     severity = severity_counts.idxmax()
-    if severity == "Sin dato":
-        return ""
-
-    percentage = severity_counts.max() / len(accidents) * 100
+    percentage = severity_counts.max() / severity_counts.sum() * 100
     return (
         f"La gravedad más frecuente es {severity.lower()}, "
         f"presente en {percentage:.0f}% de registros."
     )
+
+
+def _known_value_counts(accidents: pd.DataFrame, column: str) -> pd.Series:
+    if column not in accidents.columns:
+        return pd.Series(dtype="int64")
+
+    values = accidents[column].dropna().astype(str).str.strip()
+    values = values[
+        values.ne("")
+        & values.str.lower().ne("sin dato")
+        & values.str.lower().ne("nan")
+        & values.str.lower().ne("none")
+        & values.ne(".")
+    ]
+    return values.value_counts()

@@ -20,7 +20,7 @@ def test_build_insights_reports_dominant_comuna_percentage() -> None:
 
     result = build_insights(accidents)
 
-    assert "La comuna 17 concentra 50% de los accidentes filtrados." in result
+    assert "La comuna 17 concentra 50% de los accidentes con comuna registrada." in result
 
 
 def test_build_insights_reports_dominant_time_band() -> None:
@@ -35,3 +35,19 @@ def test_build_insights_reports_dominant_time_band() -> None:
     result = build_insights(accidents)
 
     assert "La franja noche domina el riesgo con 75% de los casos." in result
+
+
+def test_build_insights_ignores_unknown_comuna_and_time_band() -> None:
+    accidents = pd.DataFrame(
+        {
+            "comuna": ["Sin dato", "Sin dato"],
+            "franja_horaria": ["Sin dato", "Sin dato"],
+            "gravedad": ["Con lesionado", "Con lesionado"],
+        }
+    )
+
+    result = build_insights(accidents)
+
+    assert "La comuna Sin dato concentra 100% de los accidentes filtrados." not in result
+    assert "La franja Sin dato domina el riesgo con 100% de los casos." not in result
+    assert "No hay comuna válida en los datos cargados para distribuir el riesgo territorial." in result

@@ -74,4 +74,42 @@ def test_data_quality_report_counts_dropped_rows() -> None:
     assert report.total_raw == 3
     assert report.total_clean == 1
     assert report.null_fecha == 1
-    assert report.out_of_bounds == 2
+    assert report.null_coords == 0
+    assert report.out_of_bounds == 1
+
+
+def test_data_quality_report_uses_normalized_columns() -> None:
+    raw = pd.DataFrame(
+        {
+            "Fecha": ["1/01/2016", "2/01/2016"],
+            "Hora": ["10:00", "11:00"],
+            "Dirección_Reporte": ["Calle 1", "Calle 2"],
+        }
+    )
+
+    cleaned = normalize_accident_data(raw)
+    report = data_quality_report(raw, cleaned)
+
+    assert report.total_raw == 2
+    assert report.total_clean == 2
+    assert report.null_fecha == 0
+    assert report.null_coords == 2
+    assert report.out_of_bounds == 0
+
+
+def test_normalize_accident_data_parses_mixed_date_formats() -> None:
+    raw = pd.DataFrame(
+        {
+            "Fecha": ["13/01/2016", "09/27/2025"],
+            "Hora": ["10:00", "11:00"],
+            "Dirección_Reporte": ["Calle 1", "Calle 2"],
+        }
+    )
+
+    result = normalize_accident_data(raw)
+
+    assert len(result) == 2
+    assert result["fecha"].dt.strftime("%Y-%m-%d").tolist() == [
+        "2016-01-13",
+        "2025-09-27",
+    ]
