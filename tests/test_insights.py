@@ -66,3 +66,18 @@ def test_build_insights_uses_intersection_when_comuna_is_unknown() -> None:
     result = build_insights(accidents)
 
     assert "El punto Calle 5 concentra 67% de los accidentes con dirección registrada." in result
+
+
+def test_build_insights_keeps_small_intersection_percentages_visible() -> None:
+    accidents = pd.DataFrame(
+        {
+            "comuna": ["Sin dato"] * 500,
+            "interseccion": ["CLINICA COLOMBIA", *[f"Calle {index}" for index in range(499)]],
+            "franja_horaria": ["tarde"] * 500,
+            "gravedad": ["Con lesionado"] * 500,
+        }
+    )
+
+    result = build_insights(accidents)
+
+    assert any("El punto CLINICA COLOMBIA concentra 0.2%" in insight for insight in result)

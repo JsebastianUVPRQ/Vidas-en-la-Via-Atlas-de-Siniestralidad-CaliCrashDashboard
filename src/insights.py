@@ -25,7 +25,7 @@ def _dominant_comuna(accidents: pd.DataFrame) -> str:
     percentage = counts.max() / counts.sum() * 100
     return (
         f"La comuna {comuna} concentra "
-        f"{percentage:.0f}% de los accidentes con comuna registrada."
+        f"{_format_percentage(percentage)} de los accidentes con comuna registrada."
     )
 
 
@@ -38,7 +38,7 @@ def _dominant_intersection(accidents: pd.DataFrame) -> str:
     percentage = counts.max() / counts.sum() * 100
     return (
         f"El punto {intersection} concentra "
-        f"{percentage:.0f}% de los accidentes con dirección registrada."
+        f"{_format_percentage(percentage)} de los accidentes con dirección registrada."
     )
 
 
@@ -49,7 +49,7 @@ def _dominant_time_band(accidents: pd.DataFrame) -> str:
 
     band = counts.idxmax()
     percentage = counts.max() / counts.sum() * 100
-    return f"La franja {band} domina el riesgo con {percentage:.0f}% de los casos."
+    return f"La franja {band} domina el riesgo con {_format_percentage(percentage)} de los casos."
 
 
 def _dominant_severity(accidents: pd.DataFrame) -> str:
@@ -64,8 +64,14 @@ def _dominant_severity(accidents: pd.DataFrame) -> str:
     percentage = severity_counts.max() / severity_counts.sum() * 100
     return (
         f"La gravedad más frecuente es {severity.lower()}, "
-        f"presente en {percentage:.0f}% de registros."
+        f"presente en {_format_percentage(percentage)} de registros."
     )
+
+
+def _format_percentage(value: float) -> str:
+    if 0 < value < 1:
+        return f"{value:.1f}%"
+    return f"{value:.0f}%"
 
 
 def _known_value_counts(accidents: pd.DataFrame, column: str) -> pd.Series:
