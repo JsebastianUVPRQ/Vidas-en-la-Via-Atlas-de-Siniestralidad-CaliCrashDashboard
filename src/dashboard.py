@@ -11,7 +11,7 @@ import streamlit as st
 from streamlit_folium import st_folium
 
 from src.config import DATA_CANDIDATES, FATALITY_DATA_DIR, TIME_BAND_ORDER
-from src.etl import build_sample_accidents, load_accident_data, normalize_accident_data
+from src.etl import build_sample_accidents, normalize_accident_data, read_csv_flexible
 from src.fallecidos import (
     aggregate_fatalities_by_crash_class,
     aggregate_fatalities_by_time_range,
@@ -58,6 +58,7 @@ class DashboardFilters:
     date_range: tuple[date, date] | list[date] | None
     show_heatmap: bool
     show_comuna_zones: bool
+    max_markers: int
 
 
 @dataclass(frozen=True)
@@ -85,8 +86,8 @@ def render_dashboard() -> None:
     )
     _inject_dashboard_css()
 
-    uploaded_file = _render_sidebar_upload()
-    accidents, raw_accidents = _load_data_with_raw(uploaded_file)
+    _render_sidebar_source_note()
+    accidents, raw_accidents = _load_data_with_raw()
     fatalities = _load_fatalities()
 
     _render_header(accidents)
@@ -117,6 +118,7 @@ def render_dashboard() -> None:
         filtered,
         filters.show_heatmap,
         filters.show_comuna_zones,
+        filters.max_markers,
     )
     _render_temporal_story(filtered)
     _render_fatalities_section(fatalities)
@@ -124,18 +126,14 @@ def render_dashboard() -> None:
 
 
 @st.cache_data(show_spinner=False)
-def _load_data_with_raw(uploaded_file: object | None) -> tuple[pd.DataFrame, pd.DataFrame]:
-    if uploaded_file is not None:
-        raw = pd.read_csv(uploaded_file)
-        return normalize_accident_data(raw), raw
-
+def _load_data_with_raw() -> tuple[pd.DataFrame, pd.DataFrame]:
     for path in DATA_CANDIDATES:
         if path.exists():
             suffix = path.suffix.lower()
             if suffix == ".parquet":
                 raw = pd.read_parquet(path)
             else:
-                raw = pd.read_csv(path)
+                raw = read_csv_flexible(path)
             return normalize_accident_data(raw), raw
 
     sample = build_sample_accidents()
@@ -147,11 +145,10 @@ def _load_fatalities() -> pd.DataFrame:
     return load_fatality_data(FATALITY_DATA_DIR)
 
 
-def _render_sidebar_upload() -> object | None:
+def _render_sidebar_source_note() -> None:
     with st.sidebar:
         st.markdown("### Fuente de datos")
-        st.caption("Carga un CSV compatible para reemplazar la muestra local.")
-        return st.file_uploader("CSV de accidentes", type=["csv"])
+        st.caption("La aplicación usa únicamente los datos locales configurados.")
 
 
 def _render_header(accidents: pd.DataFrame) -> None:
@@ -232,11 +229,24 @@ def _render_filter_bar(accidents: pd.DataFrame) -> DashboardFilters:
         '<section class="filter-layer-heading"><span>Capas del mapa</span></section>',
         unsafe_allow_html=True,
     )
-    layer_cols = st.columns((0.9, 1.05, 4), gap="small")
+    layer_cols = st.columns((0.9, 1.05, 1.6, 2.4), gap="small")
     with layer_cols[0]:
         show_heatmap = st.toggle("Mapa de calor", value=True)
     with layer_cols[1]:
         show_comuna_zones = st.toggle("Comunas", value=True)
+    with layer_cols[2]:
+        geocoded_count = _geocoded_count(accidents)
+        if geocoded_count > 500:
+            max_markers = st.slider(
+                "Marcadores",
+                min_value=500,
+                max_value=min(20000, geocoded_count),
+                value=min(5000, geocoded_count),
+                step=500,
+            )
+        else:
+            max_markers = geocoded_count
+            st.metric("Marcadores", f"{geocoded_count:,}")
 
     return DashboardFilters(
         comunas=selected_comunas,
@@ -246,6 +256,7 @@ def _render_filter_bar(accidents: pd.DataFrame) -> DashboardFilters:
         date_range=selected_dates,
         show_heatmap=show_heatmap,
         show_comuna_zones=show_comuna_zones,
+        max_markers=max_markers,
     )
 
 
@@ -308,6 +319,7 @@ def _render_operations_view(
     accidents: pd.DataFrame,
     show_heatmap: bool,
     show_comuna_zones: bool,
+    max_markers: int,
 ) -> None:
     map_col, insight_col = st.columns((1.45, 1), gap="large")
     with map_col:
@@ -315,21 +327,29 @@ def _render_operations_view(
             '<div class="panel-heading"><h2>Mapa operativo</h2><span>Evidencia geográfica filtrada</span></div>',
             unsafe_allow_html=True,
         )
-        if len(accidents) > 1500:
+        geocoded_count = _geocoded_count(accidents)
+        if geocoded_count > max_markers:
             st.info(
-                "💡 **Rendimiento:** Se muestra una muestra representativa de 1,500 marcadores individuales para "
-                "evitar ralentizar el navegador, pero el mapa de calor y las estadísticas utilizan el 100% de los datos."
+                f"💡 **Rendimiento:** Se muestran {max_markers:,} de {geocoded_count:,} marcadores georreferenciados. "
+                "El mapa de calor y las estadísticas utilizan todos los puntos disponibles."
             )
         accident_map = build_accident_map(
             accidents,
             show_heatmap=show_heatmap,
             show_comuna_zones=show_comuna_zones,
+            max_markers=max_markers,
         )
         st_folium(accident_map, use_container_width=True, height=600, key="mapa_operativo", returned_objects=[])
 
     with insight_col:
         _render_insight_panel(accidents)
         _render_risk_rankings(accidents)
+
+
+def _geocoded_count(accidents: pd.DataFrame) -> int:
+    if accidents.empty or {"latitud", "longitud"}.difference(accidents.columns):
+        return 0
+    return int(accidents[["latitud", "longitud"]].dropna().shape[0])
 
 
 def _render_insight_panel(accidents: pd.DataFrame) -> None:

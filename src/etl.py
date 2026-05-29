@@ -3,6 +3,8 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+import re
+import unicodedata
 
 import pandas as pd
 
@@ -12,6 +14,7 @@ REQUIRED_COLUMNS = {
     "hora",
     "latitud",
     "longitud",
+    "coordenadas_estimadas",
     "comuna",
     "barrio",
     "tipo_accidente",
@@ -22,20 +25,37 @@ REQUIRED_COLUMNS = {
 COLUMN_ALIASES = {
     "date": "fecha",
     "fecha_accidente": "fecha",
+    "fecha_hecho": "fecha",
     "hora_accidente": "hora",
+    "hora_hecho": "hora",
     "latitude": "latitud",
     "lat": "latitud",
     "y": "latitud",
     "longitude": "longitud",
     "lon": "longitud",
     "lng": "longitud",
+    "long": "longitud",
     "x": "longitud",
     "comuna_nombre": "comuna",
     "tipo": "tipo_accidente",
     "clase_accidente": "tipo_accidente",
+    "tipo_confirmado_1": "tipo_accidente",
+    "tipo_clase_de_accidente": "tipo_accidente",
+    "tipo_clase_de_accidente_1": "tipo_accidente",
+    "clase_de_accidente": "tipo_accidente",
+    "clase_siniestro": "tipo_accidente",
+    "tipo_confirmado": "gravedad",
     "severidad": "gravedad",
+    "gravedad_accidente": "gravedad",
+    "gravedad_del_accidente": "gravedad",
     "cruce": "interseccion",
+    "direccion": "interseccion",
+    "direccion_reporte": "interseccion",
+    "direccion_hecho": "interseccion",
 }
+
+CSV_ENCODINGS = ("utf-8-sig", "utf-8", "cp1252", "latin-1")
+CSV_SEPARATORS = (None, ";", ",")
 
 _TIME_BAND_BINS = [-1, 5, 11, 17, 23]
 _TIME_BAND_LABELS = ["madrugada", "mañana", "tarde", "noche"]
@@ -77,9 +97,38 @@ def load_accident_data(paths: Iterable[Path]) -> pd.DataFrame:
             suffix = path.suffix.lower()
             if suffix == ".parquet":
                 return normalize_accident_data(pd.read_parquet(path))
-            return normalize_accident_data(pd.read_csv(path))
+            return normalize_accident_data(read_csv_flexible(path))
 
     return normalize_accident_data(build_sample_accidents())
+
+
+def read_csv_flexible(path_or_buffer: object) -> pd.DataFrame:
+    """Read CSV data with common Cali source encodings and separators."""
+    last_error: Exception | None = None
+    for encoding in CSV_ENCODINGS:
+        for separator in CSV_SEPARATORS:
+            try:
+                kwargs: dict[str, object] = {
+                    "encoding": encoding,
+                    "on_bad_lines": "skip",
+                }
+                if separator is None:
+                    kwargs.update({"sep": None, "engine": "python"})
+                else:
+                    kwargs["sep"] = separator
+
+                data = pd.read_csv(path_or_buffer, **kwargs)
+                if len(data.columns) > 1 or separator == ",":
+                    return data
+            except Exception as exc:
+                last_error = exc
+
+            if hasattr(path_or_buffer, "seek"):
+                path_or_buffer.seek(0)
+
+    if last_error is not None:
+        raise last_error
+    raise ValueError("No fue posible leer el archivo CSV.")
 
 
 def normalize_accident_data(data: pd.DataFrame) -> pd.DataFrame:
@@ -235,24 +284,116 @@ def build_sample_accidents() -> pd.DataFrame:
 def _normalize_columns(data: pd.DataFrame) -> pd.DataFrame:
     renamed = data.rename(columns=_normalize_column_name)
     renamed = renamed.rename(columns=COLUMN_ALIASES)
+    renamed = _coalesce_duplicate_columns(renamed)
     for column in REQUIRED_COLUMNS.difference(renamed.columns):
         renamed[column] = pd.NA
     return renamed
 
 
+def _coalesce_duplicate_columns(data: pd.DataFrame) -> pd.DataFrame:
+    """Merge duplicate normalized columns using the first meaningful value."""
+    if not data.columns.duplicated().any():
+        return data
+
+    coalesced = pd.DataFrame(index=data.index)
+    for column in dict.fromkeys(data.columns):
+        same_name = data.loc[:, data.columns == column]
+        if same_name.shape[1] == 1:
+            coalesced[column] = same_name.iloc[:, 0]
+            continue
+
+        result = same_name.iloc[:, 0]
+        for index in range(1, same_name.shape[1]):
+            result = _prefer_known_values(result, same_name.iloc[:, index])
+        coalesced[column] = result
+    return coalesced
+
+
+def _prefer_known_values(left: pd.Series, right: pd.Series) -> pd.Series:
+    left_values = left.astype("string").str.strip()
+    right_values = right.astype("string").str.strip()
+    missing_left = left.isna() | left_values.isin(["", ".", "nan", "None", "none"])
+    known_right = ~(right.isna() | right_values.isin(["", ".", "nan", "None", "none"]))
+    return left.where(~(missing_left & known_right), right)
+
+
 def _parse_and_validate(data: pd.DataFrame) -> pd.DataFrame:
     data = data.copy()
-    data["fecha"] = pd.to_datetime(data["fecha"], errors="coerce")
+    data["fecha"] = _parse_mixed_dates(data["fecha"])
     data["hora"] = data["hora"].fillna("00:00").astype(str)
     data["latitud"] = pd.to_numeric(data["latitud"], errors="coerce")
     data["longitud"] = pd.to_numeric(data["longitud"], errors="coerce")
+    estimated = _estimate_coordinates_from_intersections(data["interseccion"])
+    missing_coordinates = data["latitud"].isna() | data["longitud"].isna()
+    data.loc[missing_coordinates, "latitud"] = estimated.loc[missing_coordinates, "latitud"]
+    data.loc[missing_coordinates, "longitud"] = estimated.loc[missing_coordinates, "longitud"]
+    data["coordenadas_estimadas"] = False
+    data.loc[missing_coordinates & estimated["latitud"].notna(), "coordenadas_estimadas"] = True
     for column in ["comuna", "barrio", "tipo_accidente", "gravedad", "interseccion"]:
         data[column] = data[column].fillna("Sin dato").astype(str)
-    data = data.dropna(subset=["fecha", "latitud", "longitud"])
-    return data[
-        data["latitud"].between(*CALI_LAT_RANGE)
-        & data["longitud"].between(*CALI_LON_RANGE)
-    ].copy()
+    data = data.dropna(subset=["fecha"])
+    has_coordinates = data["latitud"].notna() & data["longitud"].notna()
+    within_cali = data["latitud"].between(*CALI_LAT_RANGE) & data[
+        "longitud"
+    ].between(*CALI_LON_RANGE)
+    return data[~has_coordinates | within_cali].copy()
+
+
+def _estimate_coordinates_from_intersections(addresses: pd.Series) -> pd.DataFrame:
+    """Approximate Cali WGS84 coordinates from grid-like reported intersections."""
+    coordinates = addresses.map(_estimate_coordinate_from_intersection)
+    estimated = pd.DataFrame(
+        coordinates.tolist(),
+        index=addresses.index,
+        columns=["latitud", "longitud"],
+    )
+    estimated["latitud"] = pd.to_numeric(estimated["latitud"], errors="coerce")
+    estimated["longitud"] = pd.to_numeric(estimated["longitud"], errors="coerce")
+    return estimated
+
+
+def _estimate_coordinate_from_intersection(address: object) -> tuple[float | None, float | None]:
+    text = _normalize_address_text(address)
+    if text in {"", ".", "SIN DATO", "NAN", "NONE"}:
+        return None, None
+
+    roads = re.findall(
+        r"\b(CALLE|CL|CARRERA|CRA|KRA|KR|DIAGONAL|DG|TRANSVERSAL|TV|AVENIDA|AV)\s+(\d{1,3})",
+        text,
+    )
+    if len(roads) < 2:
+        return None, None
+
+    calle = _first_road_number(roads, {"CALLE", "CL"})
+    carrera = _first_road_number(
+        roads,
+        {"CARRERA", "CRA", "KRA", "KR", "DIAGONAL", "DG", "TRANSVERSAL", "TV", "AVENIDA", "AV"},
+    )
+    if calle is None:
+        calle = _first_road_number(roads, {"TRANSVERSAL", "TV", "DIAGONAL", "DG"})
+    if calle is None or carrera is None:
+        return None, None
+
+    latitude = 3.416 + (0.00088 * calle)
+    longitude = -76.5035 - (0.00055 * carrera)
+    if not (CALI_LAT_RANGE[0] <= latitude <= CALI_LAT_RANGE[1]):
+        return None, None
+    if not (CALI_LON_RANGE[0] <= longitude <= CALI_LON_RANGE[1]):
+        return None, None
+    return round(latitude, 6), round(longitude, 6)
+
+
+def _first_road_number(roads: list[tuple[str, str]], road_types: set[str]) -> int | None:
+    for road_type, number in roads:
+        if road_type in road_types:
+            return int(number)
+    return None
+
+
+def _normalize_address_text(address: object) -> str:
+    normalized = unicodedata.normalize("NFKD", str(address).strip().upper())
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"\s+", " ", ascii_text)
 
 
 def _derive_time_features(data: pd.DataFrame) -> pd.DataFrame:
@@ -282,7 +423,34 @@ def _assign_time_band_vectorized(hours: pd.Series) -> pd.Series:
 
 
 def _normalize_column_name(column: str) -> str:
-    return column.strip().lower().replace(" ", "_")
+    normalized = unicodedata.normalize("NFKD", str(column).strip().lower())
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"_+", "_", re.sub(r"[^a-z0-9]+", "_", ascii_text)).strip("_")
+
+
+def _parse_mixed_dates(values: pd.Series) -> pd.Series:
+    """Parse source dates that mix day-first and month-first formats."""
+    text_values = values.astype(str).str.strip()
+    parsed = pd.to_datetime(text_values, errors="coerce", format="%Y-%m-%d")
+    missing = parsed.isna()
+    if missing.any():
+        parsed = parsed.copy()
+        parsed.loc[missing] = pd.to_datetime(
+            text_values[missing],
+            errors="coerce",
+            dayfirst=True,
+        )
+        missing = parsed.isna()
+
+    if missing.any():
+        fallback = pd.to_datetime(
+            text_values[missing],
+            errors="coerce",
+            dayfirst=False,
+        )
+        parsed = parsed.copy()
+        parsed.loc[missing] = fallback
+    return parsed
 
 
 def _extract_hour(hour_value: object) -> int:
