@@ -59,6 +59,11 @@ class DashboardFilters:
     gravedades: list[str]
     date_range: tuple[date, date] | list[date] | None
     show_heatmap: bool
+<<<<<<< Updated upstream
+=======
+    show_comuna_zones: bool
+    max_markers: int
+>>>>>>> Stashed changes
 
 
 @dataclass(frozen=True)
@@ -86,8 +91,13 @@ def render_dashboard() -> None:
     )
     _inject_dashboard_css()
 
+<<<<<<< Updated upstream
     uploaded_file = st.sidebar.file_uploader("CSV de accidentes", type=["csv"])
     accidents, raw_accidents = _load_data_with_raw(uploaded_file)
+=======
+    _render_sidebar_source_note()
+    accidents, raw_accidents = _load_data_with_raw()
+>>>>>>> Stashed changes
     fatalities = _load_fatalities()
 
     _render_header(accidents)
@@ -108,18 +118,31 @@ def render_dashboard() -> None:
     )
 
     _render_kpi_strip(filtered)
+<<<<<<< Updated upstream
     _render_operations_view(filtered, filters.show_heatmap)
+=======
+    _render_operations_view(
+        filtered,
+        filters.show_heatmap,
+        filters.show_comuna_zones,
+        filters.max_markers,
+    )
+>>>>>>> Stashed changes
     _render_temporal_story(filtered)
     _render_fatalities_section(fatalities)
     _render_technical_detail(filtered, accidents, raw_accidents)
 
 
 @st.cache_data(show_spinner=False)
+<<<<<<< Updated upstream
 def _load_data_with_raw(uploaded_file: object | None) -> tuple[pd.DataFrame, pd.DataFrame]:
     if uploaded_file is not None:
         raw = read_csv_flexible(uploaded_file)
         return normalize_accident_data(raw), raw
 
+=======
+def _load_data_with_raw() -> tuple[pd.DataFrame, pd.DataFrame]:
+>>>>>>> Stashed changes
     for path in DATA_CANDIDATES:
         if path.exists():
             suffix = path.suffix.lower()
@@ -138,6 +161,15 @@ def _load_fatalities() -> pd.DataFrame:
     return load_fatality_data(FATALITY_DATA_DIR)
 
 
+<<<<<<< Updated upstream
+=======
+def _render_sidebar_source_note() -> None:
+    with st.sidebar:
+        st.markdown("### Fuente de datos")
+        st.caption("La aplicación usa únicamente los datos locales configurados.")
+
+
+>>>>>>> Stashed changes
 def _render_header(accidents: pd.DataFrame) -> None:
     min_date = accidents["fecha"].min().date() if not accidents.empty else "sin datos"
     max_date = accidents["fecha"].max().date() if not accidents.empty else "sin datos"
@@ -159,6 +191,7 @@ def _render_filters(accidents: pd.DataFrame) -> DashboardFilters:
     with st.sidebar:
         st.markdown("### Filtros")
 
+<<<<<<< Updated upstream
         comunas = _sorted_known_unique(accidents, "comuna")
         selected_comunas = (
             st.multiselect("Comuna", comunas, default=comunas)
@@ -167,10 +200,25 @@ def _render_filters(accidents: pd.DataFrame) -> DashboardFilters:
         )
 
         direcciones = _top_known_values(accidents, "interseccion", limit=250)
+=======
+    filter_cols = st.columns((1, 1.1, 1.05, 1.35, 1.1, 1.35), gap="small")
+    comunas = _sorted_known_unique(accidents, "comuna")
+    with filter_cols[0]:
+        selected_comunas = st.multiselect(
+            "Comuna",
+            comunas,
+            default=[],
+            placeholder="Todas",
+        )
+
+    direcciones = _top_known_values(accidents, "interseccion", limit=250)
+    with filter_cols[1]:
+>>>>>>> Stashed changes
         selected_directions = st.multiselect(
             "Dirección / punto",
             direcciones,
             default=[],
+<<<<<<< Updated upstream
             help="Dejar vacío para incluir todas las direcciones.",
         )
 
@@ -179,28 +227,55 @@ def _render_filters(accidents: pd.DataFrame) -> DashboardFilters:
             for band in TIME_BAND_ORDER
             if band in set(accidents["franja_horaria"].astype(str))
         ]
+=======
+            placeholder="Todos",
+        )
+
+    available_bands = [
+        band
+        for band in TIME_BAND_ORDER
+        if band in set(accidents["franja_horaria"].astype(str))
+    ]
+    with filter_cols[2]:
+>>>>>>> Stashed changes
         selected_bands = st.multiselect(
             "Franja horaria",
             available_bands,
             default=available_bands,
         )
 
+<<<<<<< Updated upstream
         tipos_accidente = _sorted_unique(accidents, "tipo_accidente")
+=======
+    tipos_accidente = _sorted_unique(accidents, "tipo_accidente")
+    with filter_cols[3]:
+>>>>>>> Stashed changes
         selected_types = st.multiselect(
             "Tipo de accidente",
             tipos_accidente,
             default=tipos_accidente,
         )
 
+<<<<<<< Updated upstream
         gravedades = _sorted_unique(accidents, "gravedad")
+=======
+    gravedades = _sorted_unique(accidents, "gravedad")
+    with filter_cols[4]:
+>>>>>>> Stashed changes
         selected_severities = st.multiselect(
             "Gravedad",
             gravedades,
             default=gravedades,
         )
 
+<<<<<<< Updated upstream
         min_date = accidents["fecha"].min().date()
         max_date = accidents["fecha"].max().date()
+=======
+    min_date = accidents["fecha"].min().date()
+    max_date = accidents["fecha"].max().date()
+    with filter_cols[5]:
+>>>>>>> Stashed changes
         selected_dates = st.date_input(
             "Rango de fechas",
             value=(min_date, max_date),
@@ -208,7 +283,35 @@ def _render_filters(accidents: pd.DataFrame) -> DashboardFilters:
             max_value=max_date,
         )
 
+<<<<<<< Updated upstream
         show_heatmap = st.toggle("Mapa de calor", value=True)
+=======
+    st.markdown(
+        '<section class="filter-layer-heading"><span>Capas del mapa</span></section>',
+        unsafe_allow_html=True,
+    )
+    layer_cols = st.columns((0.9, 1.05, 1.6, 2.4), gap="small")
+    with layer_cols[0]:
+        show_heatmap = st.toggle("Mapa de calor", value=True)
+    with layer_cols[1]:
+        show_comuna_zones = st.toggle("Comunas", value=True)
+    with layer_cols[2]:
+        geocoded_count = _geocoded_count(accidents)
+        if geocoded_count > 500:
+            max_markers = st.slider(
+                "Marcadores",
+                min_value=500,
+                max_value=min(20000, geocoded_count),
+                value=min(5000, geocoded_count),
+                step=500,
+            )
+        elif geocoded_count == 0:
+            max_markers = 0
+            st.caption("Vista por direcciones")
+        else:
+            max_markers = geocoded_count
+            st.metric("Marcadores", f"{geocoded_count:,}")
+>>>>>>> Stashed changes
 
     return DashboardFilters(
         comunas=selected_comunas,
@@ -218,6 +321,41 @@ def _render_filters(accidents: pd.DataFrame) -> DashboardFilters:
         gravedades=selected_severities,
         date_range=selected_dates,
         show_heatmap=show_heatmap,
+<<<<<<< Updated upstream
+=======
+        show_comuna_zones=show_comuna_zones,
+        max_markers=max_markers,
+    )
+
+
+def _render_hero_insight(accidents: pd.DataFrame) -> None:
+    kpis = build_kpis(accidents)
+    insights = build_insights(accidents)
+    primary_insight = insights[0] if insights else _empty_primary_insight(accidents)
+    trend_class = _trend_class(kpis.weekly_trend)
+    trend_label = _trend_copy(kpis.weekly_trend)
+    territorial_value = kpis.top_comuna
+    territorial_caption = "comuna con mayor concentración"
+    if kpis.top_comuna == "Sin datos" and kpis.top_intersection != "Sin datos":
+        territorial_value = kpis.top_intersection
+        territorial_caption = "punto con mayor concentración"
+
+    st.markdown(
+        f"""
+        <section class="hero-insight">
+            <div>
+                <p class="hero-kicker">Lectura principal</p>
+                <h2>{escape(primary_insight)}</h2>
+            </div>
+            <div class="hero-context">
+                <span class="status-pill {trend_class}">{escape(trend_label)}</span>
+                <strong>{escape(territorial_value)}</strong>
+                <small>{escape(territorial_caption)}</small>
+            </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+>>>>>>> Stashed changes
     )
 
 
@@ -233,10 +371,22 @@ def _render_kpi_strip(accidents: pd.DataFrame) -> None:
         territorial_caption = "Dirección con más registros"
 
     cards = [
+<<<<<<< Updated upstream
         ("Total accidentes", f"{kpis.total_accidents:,}", "Registros filtrados"),
         (territorial_label, territorial_value, territorial_caption),
         ("Hora crítica", kpis.critical_hour, "Pico observado"),
         ("Tendencia semanal", kpis.weekly_trend, delta),
+=======
+        ("Total accidentes", f"{kpis.total_accidents:,}", "Registros filtrados", "primary"),
+        (territorial_label, territorial_value, territorial_caption, "neutral"),
+        ("Hora crítica", kpis.critical_hour, "Pico observado", "neutral"),
+        (
+            "Tendencia semanal",
+            _trend_copy(kpis.weekly_trend),
+            delta,
+            _trend_class(kpis.weekly_trend),
+        ),
+>>>>>>> Stashed changes
     ]
     card_html = "".join(
         (
@@ -254,34 +404,69 @@ def _render_kpi_strip(accidents: pd.DataFrame) -> None:
     )
 
 
+<<<<<<< Updated upstream
 def _render_operations_view(accidents: pd.DataFrame, show_heatmap: bool) -> None:
     map_col, insight_col = st.columns((2.35, 1), gap="large")
+=======
+def _render_operations_view(
+    accidents: pd.DataFrame,
+    show_heatmap: bool,
+    show_comuna_zones: bool,
+    max_markers: int,
+) -> None:
+    map_col, insight_col = st.columns((1.45, 1), gap="large")
+    geocoded_count = _geocoded_count(accidents)
+>>>>>>> Stashed changes
     with map_col:
         st.markdown(
             '<h2 class="section-title">Mapa operativo</h2>',
             unsafe_allow_html=True,
         )
+<<<<<<< Updated upstream
         has_geocoded_points = _has_geocoded_points(accidents)
         if has_geocoded_points and len(accidents) > 1500:
+=======
+        if geocoded_count > max_markers:
+>>>>>>> Stashed changes
             st.info(
-                "💡 **Rendimiento:** Se muestra una muestra representativa de 1,500 marcadores individuales para "
-                "evitar ralentizar el navegador, pero el mapa de calor y las estadísticas utilizan el 100% de los datos."
+                f"💡 **Rendimiento:** Se muestran {max_markers:,} de {geocoded_count:,} marcadores georreferenciados. "
+                "El mapa de calor y las estadísticas utilizan todos los puntos disponibles."
             )
+<<<<<<< Updated upstream
         if has_geocoded_points:
             accident_map = build_accident_map(accidents, show_heatmap=show_heatmap)
             st_folium(accident_map, use_container_width=True, height=600, key="mapa_operativo", returned_objects=[])
         else:
             _render_address_operations_view(accidents)
+=======
+        if geocoded_count == 0:
+            _render_address_operations_view(accidents)
+        else:
+            accident_map = build_accident_map(
+                accidents,
+                show_heatmap=show_heatmap,
+                show_comuna_zones=show_comuna_zones,
+                max_markers=max_markers,
+            )
+            st_folium(accident_map, use_container_width=True, height=600, key="mapa_operativo", returned_objects=[])
+>>>>>>> Stashed changes
 
     with insight_col:
         _render_insight_panel(accidents)
         _render_risk_rankings(accidents)
 
 
+<<<<<<< Updated upstream
 def _has_geocoded_points(accidents: pd.DataFrame) -> bool:
     if accidents.empty or {"latitud", "longitud"}.difference(accidents.columns):
         return False
     return bool(accidents[["latitud", "longitud"]].dropna().shape[0])
+=======
+def _geocoded_count(accidents: pd.DataFrame) -> int:
+    if accidents.empty or {"latitud", "longitud"}.difference(accidents.columns):
+        return 0
+    return int(accidents[["latitud", "longitud"]].dropna().shape[0])
+>>>>>>> Stashed changes
 
 
 def _render_address_operations_view(accidents: pd.DataFrame) -> None:

@@ -74,6 +74,7 @@ def test_data_quality_report_counts_dropped_rows() -> None:
     assert report.total_raw == 3
     assert report.total_clean == 1
     assert report.null_fecha == 1
+<<<<<<< Updated upstream
     assert report.null_coords == 0
     assert report.out_of_bounds == 1
 
@@ -116,18 +117,57 @@ def test_normalize_accident_data_parses_mixed_date_formats() -> None:
 
 
 def test_normalize_accident_data_coalesces_duplicate_normalized_columns() -> None:
+=======
+    assert report.out_of_bounds == 1
+
+
+def test_normalize_accident_data_keeps_rows_without_coordinates() -> None:
+>>>>>>> Stashed changes
     raw = pd.DataFrame(
         {
             "Fecha": ["1/01/2016"],
             "Hora": ["10:00"],
+<<<<<<< Updated upstream
             "Tipo_Confirmado": ["Con lesionado"],
             "Tipo_Confirmado.1": ["Por Atropello"],
             "Dirección_Reporte": ["Carrera 94 Con Calle 4 C"],
+=======
+            "Dirección_Reporte": ["Carrera 94 Con Calle 4 C"],
+            "Tipo_Confirmado": ["Con lesionado"],
+            "Tipo_Confirmado.1": ["Por Atropello"],
+>>>>>>> Stashed changes
         }
     )
 
     result = normalize_accident_data(raw)
 
+<<<<<<< Updated upstream
     assert result.loc[0, "gravedad"] == "Con lesionado"
     assert result.loc[0, "tipo_accidente"] == "Por Atropello"
     assert result.loc[0, "interseccion"] == "Carrera 94 Con Calle 4 C"
+=======
+    assert len(result) == 1
+    assert result.loc[0, "latitud"] == 3.41952
+    assert result.loc[0, "longitud"] == -76.5552
+    assert result.loc[0, "coordenadas_estimadas"]
+    assert result.loc[0, "interseccion"] == "Carrera 94 Con Calle 4 C"
+    assert result.loc[0, "gravedad"] == "Con lesionado"
+    assert result.loc[0, "tipo_accidente"] == "Por Atropello"
+
+
+def test_normalize_accident_data_keeps_unparseable_address_without_coordinates() -> None:
+    raw = pd.DataFrame(
+        {
+            "Fecha": ["1/01/2016"],
+            "Hora": ["10:00"],
+            "Dirección_Reporte": ["CLINICA COLOMBIA"],
+        }
+    )
+
+    result = normalize_accident_data(raw)
+
+    assert len(result) == 1
+    assert pd.isna(result.loc[0, "latitud"])
+    assert pd.isna(result.loc[0, "longitud"])
+    assert not result.loc[0, "coordenadas_estimadas"]
+>>>>>>> Stashed changes

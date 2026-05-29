@@ -71,6 +71,7 @@ def test_build_kpis_handles_empty_data() -> None:
     assert result.weekly_trend_delta == 0.0
 
 
+<<<<<<< Updated upstream
 def test_build_kpis_ignores_unknown_comuna() -> None:
     accidents = _sample_accidents()
     accidents["comuna"] = ["Sin dato", "Sin dato", "17"]
@@ -80,6 +81,8 @@ def test_build_kpis_ignores_unknown_comuna() -> None:
     assert result.top_comuna == "17"
 
 
+=======
+>>>>>>> Stashed changes
 def test_build_kpis_uses_intersection_when_comuna_is_unknown() -> None:
     accidents = _sample_accidents()
     accidents["comuna"] = ["Sin dato", "Sin dato", "Sin dato"]
