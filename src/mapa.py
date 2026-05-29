@@ -13,12 +13,6 @@ from src.config import CALI_CENTER
 def build_accident_map(
     accidents: pd.DataFrame,
     show_heatmap: bool = True,
-<<<<<<< Updated upstream
-=======
-    show_comuna_zones: bool = True,
-    comunas_geojson_path: Path = COMUNAS_GEOJSON_PATH,
-    max_markers: int | None = 5000,
->>>>>>> Stashed changes
 ) -> folium.Map:
     """Build an interactive map centered in Cali with accident markers."""
     crash_map = folium.Map(
@@ -37,18 +31,12 @@ def build_accident_map(
         folium.LayerControl().add_to(crash_map)
         return crash_map
 
-    geocoded_accidents = accidents.dropna(subset=["latitud", "longitud"])
-    if geocoded_accidents.empty:
-        folium.LayerControl(collapsed=True).add_to(crash_map)
-        return crash_map
-
     if show_heatmap:
         heat_points = geocoded_accidents[["latitud", "longitud"]].values.tolist()
         if heat_points:
             HeatMap(
                 heat_points,
                 name="Densidad",
-<<<<<<< Updated upstream
                 radius=20,
                 blur=18,
                 min_opacity=0.18,
@@ -57,33 +45,15 @@ def build_accident_map(
                     0.45: "#22c55e",
                     0.70: "#f59e0b",
                     1.00: "#ef4444",
-=======
-                radius=24,
-                blur=20,
-                min_opacity=0.28,
-                gradient={
-                    0.18: "#6ec6e8",
-                    0.42: "#4ade80",
-                    0.68: "#d88a22",
-                    0.86: "#f97316",
-                    1.00: "#f06464",
->>>>>>> Stashed changes
                 },
             ).add_to(crash_map)
 
     marker_cluster = MarkerCluster(name="Accidentes").add_to(crash_map)
-<<<<<<< Updated upstream
     
     # Sample markers if dataset is large to prevent browser freeze/crash
     marker_data = geocoded_accidents
     if len(marker_data) > 1500:
         marker_data = marker_data.sample(n=min(1500, len(marker_data)), random_state=42)
-=======
-
-    marker_data = geocoded_accidents
-    if max_markers is not None and len(marker_data) > max_markers:
-        marker_data = marker_data.sample(n=max_markers, random_state=42)
->>>>>>> Stashed changes
 
     for accident in marker_data.itertuples(index=False):
         popup = folium.Popup(

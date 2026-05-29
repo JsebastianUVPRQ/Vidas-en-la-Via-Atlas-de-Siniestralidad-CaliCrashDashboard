@@ -21,24 +21,6 @@ def test_build_insights_reports_dominant_comuna_percentage() -> None:
     result = build_insights(accidents)
 
     assert "La comuna 17 concentra 50% de los accidentes con comuna registrada." in result
-<<<<<<< Updated upstream
-=======
-
-
-def test_build_insights_uses_intersection_when_comuna_is_unknown() -> None:
-    accidents = pd.DataFrame(
-        {
-            "comuna": ["Sin dato", "Sin dato", "Sin dato"],
-            "interseccion": ["Calle 5", "Calle 5", "Calle 8"],
-            "franja_horaria": ["mañana", "mañana", "tarde"],
-            "gravedad": ["Con lesionado", "Con lesionado", "Con lesionado"],
-        }
-    )
-
-    result = build_insights(accidents)
-
-    assert "El punto Calle 5 concentra 67% de los accidentes con dirección registrada." in result
->>>>>>> Stashed changes
 
 
 def test_build_insights_reports_dominant_time_band() -> None:
